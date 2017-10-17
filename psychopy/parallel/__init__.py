@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 """
 This module provides read / write access to the parallel port for
 Linux or Windows.
@@ -20,21 +23,25 @@ There is also a legacy API which consists of the routines which are directly
 in this module. That API assumes you only ever want to use a single
 parallel port at once.
 """
+from __future__ import absolute_import
 
+from builtins import str
+from past.builtins import basestring
+from builtins import object
 import sys
 from psychopy import logging
 
 # To make life easier, only try drivers which have a hope in heck of working
 if sys.platform.startswith('linux'):
-    from _linux import PParallelLinux
+    from ._linux import PParallelLinux
     ParallelPort = PParallelLinux
 elif sys.platform == 'win32':
     from ctypes import windll
     if hasattr(windll, 'inpout32'):
-        from _inpout32 import PParallelInpOut32
+        from ._inpout32 import PParallelInpOut32
         ParallelPort = PParallelInpOut32
     elif hasattr(windll, 'dlportio'):
-        from _dlportio import PParallelDLPortIO
+        from ._dlportio import PParallelDLPortIO
         ParallelPort = PParallelDLPortIO
     else:
         logging.warning("psychopy.parallel has been imported but no "
@@ -44,7 +51,7 @@ else:
     logging.warning("psychopy.parallel has been imported on a Mac "
                     "(which doesn't have a parallel port?)")
 
-    # OS X doesn't have a parallel port but write the class for doc purps
+    # macOS doesn't have a parallel port but write the class for doc purps
     class ParallelPort(object):
         """Class for read/write access to the parallel port on Windows & Linux
 

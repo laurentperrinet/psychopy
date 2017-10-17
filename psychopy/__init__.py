@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 # Part of the PsychoPy library
 # Copyright (C) 2015 Jonathan Peirce
 # Distributed under the terms of the GNU General Public License (GPL).
@@ -10,7 +13,7 @@ import os
 import sys
 
 # version info for PsychoPy
-__version__ = '1.84.1'
+__version__ = '1.85.4'
 __license__ = 'GNU GPLv3 (or more recent equivalent)'
 __author__ = 'Jonathan Peirce'
 __author_email__ = 'jon@peirce.org.uk'
@@ -39,9 +42,9 @@ if __git_sha__ == 'n/a':
         __git_sha__ = output.strip()  # remove final linefeed
 
 # update preferences and the user paths
-from psychopy.preferences import prefs
-import sys
-for pathName in prefs.general['paths']:
-    sys.path.append(pathName)
-
-from psychopy.tools.versionchooser import useVersion, ensureMinimal
+if 'installing' not in locals():
+    from psychopy.preferences import prefs
+    for pathName in prefs.general['paths']:
+        sys.path.append(pathName)
+    
+    from psychopy.tools.versionchooser import useVersion, ensureMinimal

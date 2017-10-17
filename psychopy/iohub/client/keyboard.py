@@ -1,4 +1,6 @@
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
+
 # ioHub Python Module
 # .. file: psychopy/iohub/client/keyboard.py
 #
@@ -8,6 +10,7 @@
 # Distributed under the terms of the GNU General Public License
 # (GPL version 3 or any later version).
 
+from builtins import str
 from collections import deque
 import time
 
@@ -137,8 +140,8 @@ class KeyboardEvent(ioEvent):
         * 'menu'
         * 'capslock'
         * 'numlock'
-        * 'function' (OS X only)
-        * 'modhelp' (OS X only)
+        * 'function' (macOS only)
+        * 'modhelp' (macOS only)
 
         If no modifiers were active when the event occurred, an empty list is
         returned.
@@ -254,12 +257,12 @@ class Keyboard(ioHubDeviceView):
 
         pressed_keys = kb_state.get('pressed_keys')
         self._pressed_keys.clear()
-        for keyid, (key_array, repeatcount) in pressed_keys.items():
+        for keyid, (key_array, repeatcount) in list(pressed_keys.items()):
             self._pressed_keys[key_array[KeyboardEvent._attrib_index['key']]]\
                 = \
                 key_array[DeviceEvent.EVENT_HUB_TIME_INDEX]
 
-        for etype, event_arrays in kb_state.get('events').items():
+        for etype, event_arrays in list(kb_state.get('events').items()):
             self._events.setdefault(etype, deque(
                 maxlen=self._event_buffer_length)).extend(
                 [self._type2class[etype](e) for e in event_arrays])
@@ -313,7 +316,7 @@ class Keyboard(ioHubDeviceView):
 
     def clearEvents(self, event_type=None, filter_id=None):
         result = self._clearEventsRPC(event_type=event_type,filter_id=filter_id)
-        for etype, elist in self._events.items():
+        for etype, elist in list(self._events.items()):
             if event_type is None or event_type == etype:
                 elist.clear()
         return result

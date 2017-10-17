@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 from os import path
 from .._base import BaseComponent, Param, _translate
@@ -45,9 +47,6 @@ class UnknownComponent(BaseComponent):
         pass
 
     def writeFrameCode(self, buff):
-        pass
-
-    def writeRoutineStartCode(self, buff):
         pass
 
     def writeRoutineEndCode(self, buff):

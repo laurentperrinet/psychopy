@@ -1,10 +1,17 @@
-"""Base class for serial devices. Includes some convenience methods to open
-ports and check for the expected device
-"""
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 # Part of the PsychoPy library
 # Copyright (C) 2015 Jonathan Peirce
 # Distributed under the terms of the GNU General Public License (GPL).
 
+"""Base class for serial devices. Includes some convenience methods to open
+ports and check for the expected device
+"""
+
+from builtins import str
+from builtins import range
+from builtins import object
 import sys
 import time
 
@@ -43,7 +50,7 @@ class SerialDevice(object):
         if port is None:
             ports = self._findPossiblePorts()
         elif type(port) in [int, float]:
-            ports = ['COM%i' % self.portNumber]
+            ports = ['COM%i' % port]
         else:
             ports = [port]
 

@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 """
 ioHub
 ioHub Common Eye Tracker Interface
@@ -8,9 +11,10 @@ Distributed under the terms of the GNU General Public License (GPL version 3 or 
 
 .. moduleauthor:: Sol Simpson + contributors
 """
+from __future__ import absolute_import
 #from ioHub import addDirectoryToPythonPath
 #addDirectoryToPythonPath('devices/eyetracker/hw/smi/iviewx','bin')
 
-from eyetracker import (EyeTracker, MonocularEyeSampleEvent, BinocularEyeSampleEvent,
+from .eyetracker import (EyeTracker, MonocularEyeSampleEvent, BinocularEyeSampleEvent,
                         FixationStartEvent,FixationEndEvent,SaccadeStartEvent,
                         SaccadeEndEvent,BlinkStartEvent,BlinkEndEvent)

@@ -1,11 +1,13 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 """
 A stimulus class for playing movies (mp4, divx, avi etc...) in PsychoPy.
 Demo using the experimental movie3 stim to play a video file. Path of video
 needs to updated to point to a video you have. movie2 does /not/ require
 avbin to be installed.
 
-Movie2 does require:
+Movie3 does require:
 ~~~~~~~~~~~~~~~~~~~~~
 
 moviepy (which requires imageio, Decorator). These can be installed
@@ -21,17 +23,19 @@ movie is long then audio will be huge and currently the whole thing gets
     loaded in one go. We should provide streaming audio from disk.
 
 """
+from __future__ import division
 
 # Part of the PsychoPy library
 # Copyright (C) 2015 Jonathan Peirce
 # Distributed under the terms of the GNU General Public License (GPL).
 #
+from builtins import str
+from past.utils import old_div
 reportNDroppedFrames = 10
 
 import os
 
 from psychopy import logging
-from psychopy import sound
 from psychopy.tools.arraytools import val2array
 from psychopy.tools.attributetools import logAttrib, setAttribute
 from psychopy.visual.basevisual import BaseVisualStim, ContainerMixin
@@ -107,7 +111,7 @@ class MovieStim3(BaseVisualStim, ContainerMixin):
             logging.warning("FrameRate could not be supplied by psychopy; "
                             "defaulting to 60.0")
             retraceRate = 60.0
-        self._retraceInterval = 1.0 / retraceRate
+        self._retraceInterval = old_div(1.0, retraceRate)
         self.filename = filename
         self.loop = loop
         self.flipVert = flipVert
@@ -119,6 +123,12 @@ class MovieStim3(BaseVisualStim, ContainerMixin):
         self.noAudio = noAudio
         self._audioStream = None
         self.useTexSubImage2D = True
+
+        if noAudio:  # to avoid dependency problems in silent movies
+            self.sound = None
+        else:
+            from psychopy import sound
+            self.sound = sound
 
         self._videoClock = Clock()
         self.loadMovie(self.filename)
@@ -169,14 +179,17 @@ class MovieStim3(BaseVisualStim, ContainerMixin):
         if os.path.isfile(filename):
             self._mov = VideoFileClip(filename, audio=(1 - self.noAudio))
             if (not self.noAudio) and (self._mov.audio is not None):
+                sound = self.sound
                 try:
                     self._audioStream = sound.Sound(
                         self._mov.audio.to_soundarray(),
                         sampleRate=self._mov.audio.fps)
                 except:
-                    # JWE added this as a patch for a moviepy oddity where the duration is inflated in the saved file
-                    # causes the audioclip to be the wrong length, so round down and it should work
-                    jwe_tmp = self._mov.subclip(0,round(self._mov.duration))
+                    # JWE added this as a patch for a moviepy oddity where the
+                    # duration is inflated in the saved file causes the
+                    # audioclip to be the wrong length, so round down and it
+                    # should work
+                    jwe_tmp = self._mov.subclip(0, round(self._mov.duration))
                     self._audioStream = sound.Sound(
                         jwe_tmp.audio.to_soundarray(),
                         sampleRate=self._mov.audio.fps)
@@ -189,7 +202,7 @@ class MovieStim3(BaseVisualStim, ContainerMixin):
             # size, duration, fps
         # mov.audio has attributes
             # duration, fps (aka sampleRate), to_soundarray()
-        self._frameInterval = 1.0 / self._mov.fps
+        self._frameInterval = old_div(1.0, self._mov.fps)
         self.duration = self._mov.duration
         self.filename = filename
         self._updateFrameTexture()
@@ -199,14 +212,16 @@ class MovieStim3(BaseVisualStim, ContainerMixin):
         """Continue a paused movie from current position.
         """
         status = self.status
-        if self._audioStream is not None:
-            self._audioStream.play()
         if status != PLAYING:
+            if self._audioStream is not None:
+                self._audioStream.play()
+            if status == PAUSED:
+                if self.getCurrentFrameTime() < 0:
+                    self._audioSeek(0)
+                else:
+                    self._audioSeek(self.getCurrentFrameTime())
             self.status = PLAYING
             self._videoClock.reset(-self.getCurrentFrameTime())
-
-            if status == PAUSED:
-                self._audioSeek(self.getCurrentFrameTime())
 
             if log and self.autoLog:
                 self.win.logOnFlip("Set %s playing" % (self.name),
@@ -292,7 +307,7 @@ class MovieStim3(BaseVisualStim, ContainerMixin):
             self._onEos()
         elif self._numpyFrame is not None:
             if self._nextFrameT > (self._videoClock.getTime() -
-                                   self._retraceInterval / 2.0):
+                                   old_div(self._retraceInterval, 2.0)):
                 return None
         self._numpyFrame = self._mov.get_frame(self._nextFrameT)
         useSubTex = self.useTexSubImage2D
@@ -422,6 +437,7 @@ class MovieStim3(BaseVisualStim, ContainerMixin):
         self._audioSeek(t)
 
     def _audioSeek(self, t):
+        sound = self.sound
         # for sound we need to extract the array again and just begin at new
         # loc
         if self._audioStream is None:

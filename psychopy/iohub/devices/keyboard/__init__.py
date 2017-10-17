@@ -1,4 +1,6 @@
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
+
 """
 ioHub
 .. file: ioHub/devices/keyboard/__init__.py
@@ -9,13 +11,14 @@ Distributed under the terms of the GNU General Public License (GPL version 3 or 
 .. moduleauthor:: Sol Simpson <sol@isolver-software.com> + contributors, please see credits section of documentation.
 .. fileauthor:: Sol Simpson <sol@isolver-software.com>
 """
+from __future__ import absolute_import
 
 #
 # Some possibly useful python modules / functions for unicode support:
 #
 # http://docs.python.org/2/library/unicodedata.html
 
-global Keyboard
+from builtins import zip
 Keyboard=None
 
 import numpy as N
@@ -44,7 +47,7 @@ class ioHubKeyboardDevice(Device):
     __slots__=['_key_states','_modifier_states','_report_auto_repeats','_log_events_file']
     def __init__(self,*args,**kwargs):
         self._key_states=dict()
-        self._modifier_states=dict(zip(ModifierKeyCodes._mod_names,[False]*len(ModifierKeyCodes._mod_names)))
+        self._modifier_states=dict(list(zip(ModifierKeyCodes._mod_names,[False]*len(ModifierKeyCodes._mod_names))))
         self._report_auto_repeats=kwargs.get('report_auto_repeat_press_events',False)
 
         self._log_events_file = None
@@ -98,11 +101,11 @@ class ioHubKeyboardDevice(Device):
         Device._close(self)
 
 if Computer.system == 'win32':
-    from win32 import Keyboard
+    from .win32 import Keyboard
 elif Computer.system == 'linux2':
-    from linux2 import Keyboard
+    from .linux2 import Keyboard
 elif Computer.system == 'darwin':
-    from darwin import Keyboard
+    from .darwin import Keyboard
 
 ############# OS independent Keyboard Event classes ####################
 
@@ -153,7 +156,7 @@ class KeyboardInputEvent(DeviceEvent):
 
         #: The scan code for the keyboard event.
         #: This represents the physical key id on the keyboard layout.
-        #: The Linux and Windows ioHub interface provide's scan codes; the OS X implementation does not.
+        #: The Linux and Windows ioHub interface provide's scan codes; the macOS implementation does not.
         #: int value
         self.scan_code=0
 
@@ -211,7 +214,7 @@ class KeyboardInputEvent(DeviceEvent):
     @classmethod
     def createEventAsDict(cls,values):
         cls._convertFields(values)
-        return dict(zip(cls.CLASS_ATTRIBUTE_NAMES,values))
+        return dict(list(zip(cls.CLASS_ATTRIBUTE_NAMES,values)))
 
     #noinspection PyUnresolvedReferences
     @classmethod

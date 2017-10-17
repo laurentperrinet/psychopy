@@ -1,12 +1,18 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+# Part of the PsychoPy library
+# Copyright (C) 2015 Jonathan Peirce
+# Distributed under the terms of the GNU General Public License (GPL).
+
 """Minolta light-measuring devices
 See http://www.konicaminolta.com/instruments
 
 ----------
 """
-# Part of the PsychoPy library
-# Copyright (C) 2015 Jonathan Peirce
-# Distributed under the terms of the GNU General Public License (GPL).
 
+from builtins import range
+from builtins import object
 from psychopy import logging
 import struct
 import sys
@@ -55,7 +61,7 @@ class LS100(object):
             logging.console.setLevel(logging.INFO)  # more info
             logging.console.setLevel(logging.DEBUG)  # log all communications
 
-        If you're using a keyspan adapter (at least on OS X) be aware that
+        If you're using a keyspan adapter (at least on macOS) be aware that
         it needs a driver installed. Otherwise no ports wil be found.
 
         Error messages:
@@ -128,10 +134,10 @@ class LS100(object):
         if self.OK:
             self.com.close()  # not sure why this helps but on win32 it does!!
             # this is a slightly odd characteristic of the Minolta LS100
-            self.com.setByteSize(7)
-            self.com.setBaudrate(4800)
-            self.com.setParity(serial.PARITY_EVEN)  # none
-            self.com.setStopbits(serial.STOPBITS_TWO)
+            self.com.bytesize = 7
+            self.com.baudrate = 4800
+            self.com.parity = serial.PARITY_EVEN  # none
+            self.com.stopbits = serial.STOPBITS_TWO
             try:
                 if not self.com.isOpen():
                     self.com.open()
@@ -150,7 +156,7 @@ class LS100(object):
                     if reply[0:2] == 'OK':
                         self.OK = True
                         break
-                    elif reply not in self.codes.keys():
+                    elif reply not in self.codes:
                         self.OK = False
                         break  # wasn't valid
                     else:

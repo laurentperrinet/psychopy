@@ -1,8 +1,11 @@
+from __future__ import print_function
 
+from builtins import object
 import os
 import pytest
 
-from psychopy.app import builder
+from psychopy import prefs
+from psychopy.app import builder, projects
 from psychopy.app.builder.components import getAllComponents
 
 # use "python genComponsTemplate.py --out" to generate a new profile to test against
@@ -42,19 +45,28 @@ class TestComponents(object):
                 tmpApp = wx.PySimpleApp()
             else:
                 tmpApp = wx.App(False)
-            try: from psychopy.app import localization
-            except Exception: pass  # not needed if can't import it
+            try:
+                from psychopy.app import localization
+            except Exception:
+                pass  # not needed if can't import it
             cls.allComp = getAllComponents(fetchIcons=False)
+
+        cls.origProjectCatalog = projects.projectCatalog
+        projects.projectCatalog = {}
+
+    @classmethod
+    def teardown_class(cls):
+        projects.projectCatalog = cls.origProjectCatalog
 
     def setup(self):
         """This setup is done for each test individually
         """
         pass
+
     def teardown(self):
         pass
 
     def test_component_attribs(self):
-
         target = open(self.baselineProfile, 'rU').read()
         targetLines = target.splitlines()
         targetTag = {}
@@ -68,31 +80,39 @@ class TestComponents(object):
                 targetTag[t] += '\n' + line  # previous t value
 
         param = builder.experiment.Param('', '')  # want its namespace
-        ignore = ['__doc__', '__init__', '__module__', '__str__']
+        ignore = ['__doc__', '__init__', '__module__', '__str__', 'next',
+                  '__unicode__', '__native__', '__nonzero__', '__long__']
 
         # these are for display only (cosmetic) and can end up being localized
         # so typically do not want to check during automated testing, at least
         # not when things are still new-ish and subject to change:
         ignore += ['hint',
                    'label',  # comment-out to compare labels when checking
-                   'categ'
+                   'categ',
+                   'next',
                    ]
+        for field in dir(param):
+            if field.startswith("__"):
+                ignore.append(field)
         fields = set(dir(param)).difference(ignore)
 
         err = []
         for compName in sorted(self.allComp):
             comp = self.allComp[compName](parentName='x', exp=self.exp)
             order = '%s.order:%s' % (compName, eval("comp.order"))
-            if not order+'\n' in target:
+
+            if order+'\n' not in target:
                 tag = order.split(':',1)[0]
                 try:
                     mismatch = order + ' <== ' + targetTag[tag]
                 except IndexError: # missing
                     mismatch = order + ' <==> NEW (no matching param in the reference profile)'
                 print(mismatch.encode('utf8'))
+
                 if not ignoreOrder:
                     err.append(mismatch)
-            for parName in comp.params.keys():
+
+            for parName in comp.params:
                 # default is what you get from param.__str__, which returns its value
                 default = '%s.%s.default:%s' % (compName, parName, comp.params[parName])
                 lineFields = []
@@ -105,12 +125,16 @@ class TestComponents(object):
                     lineFields.append(f)
 
                 for line in [default] + lineFields:
+                    # some attributes vary by machine so don't check those
                     if line.startswith('ParallelOutComponent.address') and ignoreParallelOutAddresses:
                         continue
-                    if ('SettingsComponent.Use version.allowedVals' in line or
+                    elif line.startswith('SettingsComponent.OSF Project ID.allowedVals'):
+                        continue
+                    elif ('SettingsComponent.Use version.allowedVals' in line or
                         'SettingsComponent.Use version.__dict__' in line):
                         # versions available on travis-ci are only local
                         continue
+                    # start checking params
                     if not line+'\n' in target:
                         # mismatch, so report on the tag from orig file
                         # match checks tag + multi-line, because line is multi-line and target is whole file

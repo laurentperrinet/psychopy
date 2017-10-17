@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 import wx
 import sys
 import re
@@ -37,6 +40,11 @@ class StdOutRich(wx.richtext.RichTextCtrl):
             class WordFetcher:
         File "C:\Program Files\wxPython2.8 Docs and Demos\samples\hangman\hangman.py", line 23, in WordFetcher
         """
+
+        # if it comes form a stdout in Py3 then convert to unicode
+        if type(inStr) == bytes:
+            inStr = inStr.decode()
+
         for thisLine in inStr.splitlines(True):
             if len(re.findall('".*", line.*', thisLine)) > 0:
                 # this line contains a file/line location so write as URL

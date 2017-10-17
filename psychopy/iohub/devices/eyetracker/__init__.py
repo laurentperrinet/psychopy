@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 """
 ioHub
 ioHub Common Eye Tracker Interface
@@ -9,11 +12,12 @@ Distributed under the terms of the GNU General Public License (GPL version 3 or 
 .. moduleauthor:: Sol Simpson <sol@isolver-software.com>
 .. fileauthor:: Sol Simpson <sol@isolver-software.com>
 """
+from __future__ import absolute_import
 
 from ... import print2err
 from .. import Device, ioDeviceError
 from ...constants import DeviceConstants, EyeTrackerConstants
-import hw
+from . import hw
 
 
 class EyeTrackerDevice(Device):
@@ -433,7 +437,7 @@ class EyeTrackerDevice(Device):
         """
         self.__class__._INSTANCE=None
         
-from eye_events import (MonocularEyeSampleEvent, BinocularEyeSampleEvent,
+from .eye_events import (MonocularEyeSampleEvent, BinocularEyeSampleEvent,
                         FixationStartEvent,FixationEndEvent,SaccadeStartEvent,
                         SaccadeEndEvent,BlinkStartEvent,BlinkEndEvent)
         

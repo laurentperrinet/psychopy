@@ -1,4 +1,6 @@
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
+
 '''Wrapper for iViewXAPI.h
 
 Generated with:
@@ -7,6 +9,8 @@ ctypesgen.py -a --insert-file=prepend_contents.py --cpp=cl -E -l iViewXAPI -o iV
 Do not modify this file.
 '''
 
+from builtins import str
+from builtins import object
 __docformat__ =  'restructuredtext'
 
 # Begin preamble
@@ -380,7 +384,7 @@ class LibraryLoader(object):
                 return ctypes.CDLL(path, ctypes.RTLD_GLOBAL)
             else:
                 return ctypes.windll.LoadLibrary(path)
-        except OSError,e:
+        except OSError as e:
             raise ImportError(e)
 
     def getpaths(self,libname):
@@ -398,9 +402,8 @@ class LibraryLoader(object):
     def getplatformpaths(self, libname):
         return []
 
-# Darwin (Mac OS X)
 
-class DarwinLibraryLoader(LibraryLoader):
+class DarwinLibraryLoader(LibraryLoader):  # Darwin (macOS)
     name_formats = ["lib%s.dylib", "lib%s.so", "lib%s.bundle", "%s.dylib",
                 "%s.so", "%s.bundle", "%s"]
 
@@ -422,7 +425,7 @@ class DarwinLibraryLoader(LibraryLoader):
 
         Before commencing the standard search, the method first checks
         the bundle's ``Frameworks`` directory if the application is running
-        within a bundle (OS X .app).
+        within a bundle (macOS .app).
         '''
 
         dyld_fallback_library_path = _environ_path("DYLD_FALLBACK_LIBRARY_PATH")
@@ -1764,7 +1767,7 @@ ET_PARAM_BINOCULAR = 18
 # Creating the enum as a dict for utility..
 etDeviceTypes= dict(NONE=0, RED=1, REDm=2, HiSpeed=3, MRI=4, HED=5, ETG=6, Custom=7)
 
-for k,v in etDeviceTypes.items():
+for k,v in list(etDeviceTypes.items()):
     etDeviceTypes[v]=k
 
 

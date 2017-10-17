@@ -1,4 +1,5 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 """Creates a Line between two points as a special case of a
 :class:`~psychopy.visual.ShapeStim`
@@ -27,9 +28,10 @@ class Line(ShapeStim):
         :class:`~psychopy.visual.ShapeStim` accepts, except
         for vertices, closeShape and fillColor.
 
-        The methods `contains` and `overlaps` are inherited from
-        `~psychopy.visual.ShapeStim`, but always return False
-        (because a line is not a proper (2D) polygon).
+        :Notes:
+
+        The `contains` method always return False because a line is not a
+        proper (2D) polygon.
         """
         # what local vars are defined (these are the init params) for use by
         # __repr__
@@ -78,9 +80,5 @@ class Line(ShapeStim):
         """
         setAttribute(self, 'end', end, log)
 
-    # Not meaningful for a line, thus deleted
-    def contains(self):
-        pass
-
-    def overlaps(self):
-        pass
+    def contains(self, *args, **kwargs):
+        return False

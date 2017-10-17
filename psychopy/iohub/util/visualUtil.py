@@ -1,4 +1,6 @@
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
+
 """
 ioHub
 .. file: iohub/util/visualUtil.py
@@ -11,7 +13,9 @@ Distributed under the terms of the GNU General Public License (GPL version 3 or 
 
 """
 from __future__ import division
+from __future__ import print_function
 
+from builtins import object
 import time
 import weakref
 from ... import visual, core
@@ -222,11 +226,11 @@ class ScreenState(object):
                 mtext = "%s : tracker_time [%.6f]"%(mtext, tracker.trackerSec())
                 tracker.sendMessage(mtext)
             else:
-                print '----------------------'
-                print 'Warning: eyetracker is not connected.'
-                print 'Msg not sent to eyetracker datafile: '
-                print mtext
-                print '----------------------'
+                print('----------------------')
+                print('Warning: eyetracker is not connected.')
+                print('Msg not sent to eyetracker datafile: ')
+                print(mtext)
+                print('----------------------')
         except Exception:
             pass
         self.experimentRuntime().hub.sendMessageEvent(mtext, sec_time=mtime)
@@ -469,7 +473,7 @@ class DeviceEventTrigger(Trigger):
                 foundEvent = False
             else:
                 for (attrname,
-                     conds) in self.event_attribute_conditions.iteritems():
+                     conds) in self.event_attribute_conditions.items():
                     if isinstance(conds, (list, tuple)) and getattr(event, attrname) in conds:
                         # event_value is a list or tuple of possible values that are OK
                         pass
@@ -550,7 +554,7 @@ class SinusoidalMotion(object):
         self.nextFlipTimeEstimate = None
 
         self.reportedRetraceInterval = display.getRetraceInterval()
-        print "Display retrace interval: ", self.reportedRetraceInterval
+        print("Display retrace interval: ", self.reportedRetraceInterval)
 
         # calculate the omega constants needed for the simple
         # harmonic motion equations:

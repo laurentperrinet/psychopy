@@ -1,7 +1,11 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 # Part of the PsychoPy library
 # Copyright (C) 2015 Jonathan Peirce
 # Distributed under the terms of the GNU General Public License (GPL).
 
+from builtins import str
 from os import path
 from .._base import BaseComponent, Param, _translate
 
@@ -84,16 +88,16 @@ class CodeComponent(BaseComponent):
 
     def writeInitCode(self, buff):
         buff.writeIndentedLines(
-            unicode(self.params['Begin Experiment']) + '\n')
+            str(self.params['Begin Experiment']) + '\n')
 
     def writeRoutineStartCode(self, buff):
-        buff.writeIndentedLines(unicode(self.params['Begin Routine']) + '\n')
+        buff.writeIndentedLines(str(self.params['Begin Routine']) + '\n')
 
     def writeFrameCode(self, buff):
-        buff.writeIndentedLines(unicode(self.params['Each Frame']) + '\n')
+        buff.writeIndentedLines(str(self.params['Each Frame']) + '\n')
 
     def writeRoutineEndCode(self, buff):
-        buff.writeIndentedLines(unicode(self.params['End Routine']) + '\n')
+        buff.writeIndentedLines(str(self.params['End Routine']) + '\n')
 
     def writeExperimentEndCode(self, buff):
-        buff.writeIndentedLines(unicode(self.params['End Experiment']) + '\n')
+        buff.writeIndentedLines(str(self.params['End Experiment']) + '\n')

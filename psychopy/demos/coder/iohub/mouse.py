@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
 """
@@ -11,6 +11,7 @@ Updated July, 2013, Sol, Added timeouts
 """
 
 from __future__ import division
+from __future__ import print_function
 
 import sys
 
@@ -81,7 +82,7 @@ while not kb_events:
         fixSpot.setPos(position)
 
     if sys.platform == 'darwin':
-        # On OS X, both x and y mouse wheel events can be detected, assuming the mouse being used
+        # On macOS, both x and y mouse wheel events can be detected, assuming the mouse being used
         # supported 2D mouse wheel motion.
         wheelPosX, wheelPosY = mouse.getScroll()
     else:

@@ -1,4 +1,5 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 """A class representing a window for displaying one or more stimuli"""
 
@@ -7,10 +8,18 @@
 # Distributed under the terms of the GNU General Public License (GPL).
 
 from __future__ import absolute_import
+from __future__ import division
 
+from builtins import map
+from builtins import str
+from builtins import range
+from past.builtins import basestring
+from builtins import object
 import sys
 import os
 import weakref
+
+from psychopy.contrib.lazy_import import lazy_import
 
 # Ensure setting pyglet.options['debug_gl'] to False is done prior to any
 # other calls to pyglet or pyglet submodules, otherwise it may not get picked
@@ -38,10 +47,6 @@ if sys.platform == 'win32':
         haveAvbin = False
         # either avbin isn't installed or scipy.stats has been imported
         # (prevents avbin loading)
-    except Exception, e:
-        # WindowsError on some systems
-        # AttributeError if using avbin5 from pyglet 1.2?
-        haveAvbin = False
     except AttributeError:
         # avbin is not found, causing exception in pyglet 1.2??
         # (running psychopy 1.81 standalone on windows 7):
@@ -52,6 +57,11 @@ if sys.platform == 'win32':
         # AttributeError: 'NoneType' object has no attribute
         # 'avbin_get_version'
         haveAvbin = False
+    except Exception:
+        # WindowsError on some systems
+        # AttributeError if using avbin5 from pyglet 1.2?
+        haveAvbin = False
+
 
 import psychopy  # so we can get the __path__
 from psychopy import core, platform_specific, logging, prefs, monitors, event
@@ -61,6 +71,7 @@ import psychopy.event
 # (JWP has no idea why!)
 from psychopy.tools.attributetools import attributeSetter, setAttribute
 from psychopy.tools.arraytools import val2array
+from psychopy.tools.monitorunittools import convertToPix
 from .text import TextStim
 from .grating import GratingStim
 from .helpers import setColor
@@ -92,14 +103,12 @@ try:
 except Exception:
     havePygletMedia = False
 
-try:
-    import pygame
-except Exception:
-    pass
+# lazy_import puts pygame into the namespace but delays import until needed
+lazy_import(globals(), "import pygame")
 
 DEBUG = False
 IOHUB_ACTIVE = False
-
+retinaContext = None  # only needed for retina-ready displays
 
 # keep track of windows that have been opened
 # Use a list of weak references so that we don't stop the window being deleted
@@ -118,7 +127,8 @@ openWindows = core.openWindows = OpenWinList()  # core needs this for wait()
 
 class Window(object):
     """Used to set up a context in which to draw objects,
-    using either `pyglet <www.pyglet.org>`_ or `pygame <www.pygame.org>`_
+    using either `pyglet <http://www.pyglet.org>`_ or
+    `pygame <http://www.pygame.org>`_
 
     The pyglet backend allows multiple windows to be created, allows the user
     to specify which screen to use (if more than one is available, duh!) and
@@ -151,11 +161,13 @@ class Window(object):
                  viewOri=0.0,
                  waitBlanking=True,
                  allowStencil=False,
+                 multiSample=False,
+                 numSamples=2,
                  stereo=False,
                  name='window1',
                  checkTiming=True,
                  useFBO=False,
-                 useRetina = False,
+                 useRetina=True,
                  autoLog=True):
         """
         These attributes can only be set at initialization. See further down
@@ -168,7 +180,7 @@ class Window(object):
                 Size of the window in pixels (X,Y)
             pos : *None* or (x,y)
                 Location of the window on the screen
-            rgb : [0,0,0]
+            color : [0,0,0]
                 Color of background as [r,g,b] list or single value.
                 Each gun can take values between -1 and 1
             fullscr : *None*, True or False
@@ -192,7 +204,9 @@ class Window(object):
                 Can be used to apply a custom scaling to the current units
                 of the :class:`~psychopy.visual.Window`.
             viewPos : *None*, or [x,y]
-                If not None, redefines the origin for the window
+                If not None, redefines the origin within the window, in the
+                ref:`units` of the window. Values outside the borders will be
+                clamped to lie on the border.
             viewOri : *0* or any numeric value
                 A single value determining the orientation of the view in degs
             waitBlanking : *None*, True or False.
@@ -209,15 +223,27 @@ class Window(object):
                 the OpenGL stencil buffer
                 (notably, allowing the class:`~psychopy.visual.Aperture`
                 to be used).
+            multiSample : True or *False*
+                If True and your graphics driver supports multisample buffers,
+                multiple color samples will be taken per-pixel, providing an
+                anti-aliased image through spatial filtering.
+                (Cannot be changed after opening a window, pyglet only)
+            numSamples : *2* or integer >2
+                A single value specifying the number of samples per pixel if
+                multisample is enabled. The higher the number, the better the
+                image quality, but can delay frame flipping.
+                (The largest number of samples is determined by GL_MAX_SAMPLES,
+                usually 16 or 32 on newer hardware, will crash if number
+                is invalid)
             stereo : True or *False*
                 If True and your graphics card supports quad buffers then
                 this will be enabled.
                 You can switch between left and right-eye scenes for drawing
                 operations using :func:`~psychopy.visual.Window.setBuffer`
-            useRetina : True or *False*
-                Try to use the full resolution of the Retina display (only on
-                certain Macs). By default the display's reduced resolution will
-                be used. NB when you use Retina display the initial win size
+            useRetina : *True* or False
+                In PsychoPy >1.85.3 this should always be True as pyglet
+                (or Apple) no longer allows us to create a non-retina display.
+                NB when you use Retina display the initial win size
                 request will be in the larger pixels but subsequent use of
                 units='pix' should refer to the tiny Retina pixels. Window.size
                 will give the actual size of the screen in Retina pixels
@@ -236,7 +262,7 @@ class Window(object):
             self._initParams.remove(unecess)
 
         # Check autoLog value
-        if not autoLog in (True, False):
+        if autoLog not in (True, False):
             raise ValueError(
                 'autoLog must be either True or False for visual.Window')
 
@@ -248,6 +274,14 @@ class Window(object):
         self.winHandle = None
         self.useFBO = useFBO
         self.useRetina = useRetina
+
+        if sys.platform=='darwin' and not useRetina and pyglet.version >= "1.3":
+            raise ValueError("As of PsychoPy 1.85.3 OSX windows should all be "
+                             "set to useRetina=True (or remove the argument). "
+                             "Pyglet 1.3 appears to be forcing "
+                             "us to use retina on any retina-capable screen "
+                             "so setting to False has no effect.")
+
 
         self._toLog = []
         self._toCall = []
@@ -292,12 +326,18 @@ class Window(object):
 
         # parameters for transforming the overall view
         self.viewScale = val2array(viewScale)
+        if self.viewPos is not None and self.units is None:
+            raise ValueError('You must define the window units to use viewPos')
         self.viewPos = val2array(viewPos, withScalar=False)
         self.viewOri = float(viewOri)
-        if self.viewOri is not 0. and self.viewPos is not None:
+        if self.viewOri != 0. and self.viewPos is not None:
             msg = "Window: viewPos & viewOri are currently incompatible"
             raise NotImplementedError(msg)
         self.stereo = stereo  # use quad buffer if requested (and if possible)
+
+        # enable multisampling
+        self.multiSample = multiSample
+        self.numSamples = numSamples
 
         # load color conversion matrices
         self.dkl_rgb = self.monitor.getDKL_RGB()
@@ -358,10 +398,11 @@ class Window(object):
             from psychopy.hardware.crs.bits import BitsPlusPlus
             self.bits = self.interface = BitsPlusPlus(self)
             self.haveBits = True
-            if hasattr(self.monitor, 'lineariseLums'):
+            if (hasattr(self.monitor, 'linearizeLums') or
+                    hasattr(self.monitor, 'lineariseLums')):
                 # rather than a gamma value we could use bits++ and provide a
                 # complete linearised lookup table using
-                # monitor.lineariseLums(lumLevels)
+                # monitor.linearizeLums(lumLevels)
                 self.__dict__['gamma'] = None
 
         self.frameClock = core.Clock()  # from psycho/core
@@ -380,7 +421,7 @@ class Window(object):
 
         self.lastFrameT = core.getTime()
         self.waitBlanking = waitBlanking
-        self._refreshThreshold = 1 / 1.0  # initial val needed by flip()
+        self.refreshThreshold = 1.0  # initial val needed by flip()
 
         # over several frames with no drawing
         self._monitorFrameRate = None
@@ -390,9 +431,9 @@ class Window(object):
             self._monitorFrameRate = self.getActualFrameRate()
         if self._monitorFrameRate is not None:
             self.monitorFramePeriod = 1.0 / self._monitorFrameRate
-            self._refreshThreshold = (1.0 / self._monitorFrameRate) * 1.2
+            self.refreshThreshold = 1.0 / self._monitorFrameRate * 1.2
         else:
-            self._refreshThreshold = (1.0 / 60) * 1.2  # maybe a flat panel?
+            self.refreshThreshold = 1.0 / 60 * 1.2  # maybe a flat panel?
         openWindows.append(self)
 
         self.autoLog = autoLog
@@ -400,7 +441,7 @@ class Window(object):
             logging.exp("Created %s = %s" % (self.name, str(self)))
 
     def __del__(self):
-        if self._closed == False:
+        if self._closed is False:
             self.close()
 
     def __enter__(self):
@@ -439,6 +480,35 @@ class Window(object):
 
     def setUnits(self, value, log=True):
         setAttribute(self, 'units', value, log=log)
+
+    @attributeSetter
+    def viewPos(self, value):
+        """The origin of the window onto which stimulus-objects are drawn.
+
+        The value should be given in the units defined for the window. NB:
+        Never change a single component (x or y) of the origin, instead replace
+        the viewPos-attribute in one shot, e.g.:
+            win.viewPos = [new_xval, new_yval]  # This is the way to do it
+            win.viewPos[0] = new_xval  # DO NOT DO THIS! Errors will result.
+        """
+        self.__dict__['viewPos'] = value
+        if value is not None:
+            # let setter take care of normalisation
+            setattr(self, '_viewPosNorm', value)
+
+    @attributeSetter
+    def _viewPosNorm(self, value):
+        """Normalised value of viewPos, hidden from user view."""
+        # first convert to pixels, then normalise to window units
+        viewPos_pix = convertToPix([0, 0], list(value),
+                                   units=self.units, win=self)[:2]
+        viewPos_norm = viewPos_pix / (self.size / 2.0)
+        # Clip to +/- 1; should going out-of-window raise an exception?
+        viewPos_norm = numpy.clip(viewPos_norm, a_min=-1., a_max=1.)
+        self.__dict__['_viewPosNorm'] = viewPos_norm
+
+    def setViewPos(self, value, log=True):
+        setAttribute(self, 'viewPos', value, log=log)
 
     @attributeSetter
     def waitBlanking(self, value):
@@ -494,6 +564,26 @@ class Window(object):
         if clear:
             self.frameIntervals = []
             self.frameClock.reset()
+
+    def _setCurrent(self):
+        """Make this window current. If useFBO=True, the framebuffer is bound
+        after the context switch.
+        """
+        if self != globalVars.currWindow and self.winType == 'pyglet':
+            self.winHandle.switch_to()
+            globalVars.currWindow = self
+
+            # if we are using an FBO, bind it
+            if self.useFBO:
+                GL.glBindFramebufferEXT(GL.GL_FRAMEBUFFER_EXT,
+                                        self.frameBuffer)
+                GL.glReadBuffer(GL.GL_COLOR_ATTACHMENT0_EXT)
+                GL.glDrawBuffer(GL.GL_COLOR_ATTACHMENT0_EXT)
+
+                # NB - check if we need these
+                GL.glActiveTexture(GL.GL_TEXTURE0)
+                GL.glBindTexture(GL.GL_TEXTURE_2D, 0)
+                GL.glEnable(GL.GL_STENCIL_TEST)
 
     def onResize(self, width, height):
         """A default resize event handler.
@@ -579,7 +669,7 @@ class Window(object):
                 stencilOn = GL.glIsEnabled(GL.GL_STENCIL_TEST)
                 GL.glDisable(GL.GL_STENCIL_TEST)
 
-                if self.bits != None:
+                if self.bits is not None:
                     self.bits._prepareFBOrender()
 
                 # before flipping need to copy the renderBuffer to the
@@ -607,7 +697,10 @@ class Window(object):
             GL.glTranslatef(0.0, 0.0, -5.0)
 
             for dispatcher in self._eventDispatchers:
-                dispatcher.dispatch_events()
+                try:
+                    dispatcher.dispatch_events()
+                except:
+                    dispatcher._dispatch_events()
 
             # this might need to be done even more often than once per frame?
             self.winHandle.dispatch_events()
@@ -651,8 +744,11 @@ class Window(object):
             absScaleX, absScaleY = 1, 1
 
         if self.viewPos is not None:
-            normRfPosX = self.viewPos[0] / absScaleX
-            normRfPosY = self.viewPos[1] / absScaleY
+            # here we must use normalised units in _viewPosNorm,
+            # see the corresponding attributeSetter above
+            normRfPosX = self._viewPosNorm[0] / absScaleX
+            normRfPosY = self._viewPosNorm[1] / absScaleY
+
             GL.glTranslatef(normRfPosX, normRfPosY, 0.0)
 
         if self.viewOri:  # float
@@ -697,7 +793,7 @@ class Window(object):
                 self.recordFrameIntervalsJustTurnedOn = False
             else:  # past the first frame since turned on
                 self.frameIntervals.append(deltaT)
-                if deltaT > self._refreshThreshold:
+                if deltaT > self.refreshThreshold:
                     self.nDroppedFrames += 1
                     if self.nDroppedFrames < reportNDroppedFrames:
                         txt = 't of last frame was %.2fms (=1/%i)'
@@ -875,9 +971,11 @@ class Window(object):
         GL.glReadPixels(0, 0, self.size[0], self.size[1],
                         GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, bufferDat)
         try:
-            im = Image.fromstring(mode='RGBA', size=self.size, data=bufferDat)
+            im = Image.fromstring(mode='RGBA', size=tuple(self.size),
+                                  data=bufferDat)
         except Exception:
-            im = Image.frombytes(mode='RGBA', size=self.size, data=bufferDat)
+            im = Image.frombytes(mode='RGBA', size=tuple(self.size),
+                                 data=bufferDat)
         im = im.transpose(Image.FLIP_TOP_BOTTOM)
         im = im.convert('RGB')
 
@@ -902,7 +1000,7 @@ class Window(object):
                 quality GIF by saving PNG files and then combining them in
                 dedicated image manipulation software, such as GIMP). On
                 Windows and Linux `.mpeg` files can be created if `pymedia`
-                is installed. On OS X `.mov` files can be created if the
+                is installed. On macOS `.mov` files can be created if the
                 pyobjc-frameworks-QTKit is installed.
 
                 Unfortunately the libs used for movie generation can be flaky
@@ -953,7 +1051,7 @@ class Window(object):
                 numpyFrames.append(numpy.array(frame))
             clip = ImageSequenceClip(numpyFrames, fps=fps)
             if fileExt == '.gif':
-                clip.write_gif(fileName,fps=15)
+                clip.write_gif(fileName, fps=fps, fuzz=0, opt='nq')
             else:
                 clip.write_videofile(fileName, codec=codec)
         elif len(self.movieFrames) == 1:
@@ -990,7 +1088,7 @@ class Window(object):
                (rect[1] / -2. + 0.5) * y,  # Top
                (rect[2] / 2. + 0.5) * x,  # Right
                (rect[3] / -2. + 0.5) * y]  # Bottom
-        box = map(int, box)
+        box = list(map(int, box))
 
         horz = box[2] - box[0]
         vert = box[3] - box[1]
@@ -1026,7 +1124,7 @@ class Window(object):
             imP2 = Image.new(imType, (xPowerOf2, yPowerOf2))
             # paste centered
             imP2.paste(region, (int(xPowerOf2 / 2. - region.size[0] / 2.),
-                                int(yPowerOf2 / 2. - region.size[1] / 2)))
+                                int(yPowerOf2 / 2.) - region.size[1] / 2))
             region = imP2
 
         return region
@@ -1081,7 +1179,7 @@ class Window(object):
     def fps(self):
         """Report the frames per second since the last call to this function
         (or since the window was created if this is first call)"""
-        fps = self.frames / (self.frameClock.getTime())
+        fps = self.frames / self.frameClock.getTime()
         self.frameClock.reset()
         self.frames = 0
         return fps
@@ -1166,10 +1264,10 @@ class Window(object):
             # RGB in range 0:1 and scaled for contrast
             desiredRGB = (self.rgb + 1) / 2.0
         # rgb255 and named are not...
-        elif type(self.colorSpace) is str:
-            desiredRGB = (self.rgb) / 255.0
+        elif self.colorSpace in ['rgb255', 'named']:
+            desiredRGB = self.rgb / 255.0
         else:  # some array / numeric stuff
-            msg = 'invalid value "%s" for Window.colorSpace'
+            msg = 'invalid value %r for Window.colorSpace'
             raise ValueError(msg % colorSpace)
 
         # if it is None then this will be done during window setup
@@ -1186,9 +1284,9 @@ class Window(object):
         if self.winType == 'pyglet' and globalVars.currWindow != self:
             self.winHandle.switch_to()
             globalVars.currWindow = self
-        GL.glClearColor((self.rgb[0] + 1.0) / 2.0,
-                        (self.rgb[1] + 1.0) / 2.0,
-                        (self.rgb[2] + 1.0) / 2.0,
+        GL.glClearColor(((self.rgb[0] + 1.0) / 2.0),
+                        ((self.rgb[1] + 1.0) / 2.0),
+                        ((self.rgb[2] + 1.0) / 2.0),
                         1.0)
 
     def _setupGamma(self, gammaVal):
@@ -1238,7 +1336,7 @@ class Window(object):
                    "Bits++/Bits# enabled. It was ambiguous what should "
                    "happen. Use the setGamma() function of the bits box "
                    "instead")
-            raise DeprecationError, msg
+            raise DeprecationWarning(msg)
         elif self.winType == 'pygame':
             pygame.display.set_gamma(self.gamma[0],
                                      self.gamma[1],
@@ -1289,8 +1387,8 @@ class Window(object):
                               ' and cm). Check settings in MonitorCentre.')
                 core.wait(1.0)
                 core.quit()
-            thisScale = ((numpy.array([2.0, 2.0]) / self.size) /
-                         (float(self.scrWidthCM) / float(self.scrWidthPIX)))
+            thisScale = ((numpy.array([2.0, 2.0]) / self.size)
+                        / (self.scrWidthCM / self.scrWidthPIX))
         elif units in ["deg", "degs"]:
             # windowPerDeg = winPerCM * CMperDEG
             #              = winPerCM * tan(pi/180) * distance
@@ -1301,7 +1399,7 @@ class Window(object):
                 core.wait(1.0)
                 core.quit()
             cmScale = ((numpy.array([2.0, 2.0]) / self.size) /
-                       (float(self.scrWidthCM) / float(self.scrWidthPIX)))
+                       (self.scrWidthCM / self.scrWidthPIX))
             thisScale = cmScale * 0.017455 * self.scrDistCM
         elif units == "stroke_font":
             lw = 2 * font.letterWidth
@@ -1330,47 +1428,35 @@ class Window(object):
         else:
             stencil_size = 0
         vsync = 0
-        
+
         # provide warning if stereo buffers are requested but unavailable
         if self.stereo and not GL.gl_info.have_extension('GL_STEREO'):
             logging.warning('A stereo window was requested but the graphics '
                             'card does not appear to support GL_STEREO')
             self.stereo = False
 
+        # multisampling
+        sample_buffers = 0
+        aa_samples = 0
+
+        if self.multiSample:
+            sample_buffers = 1
+            # get maximum number of samples the driver supports
+            max_samples = (GL.GLint)()
+            GL.glGetIntegerv(GL.GL_MAX_SAMPLES, max_samples)
+
+            if (self.numSamples >= 2) and (self.numSamples <= max_samples.value):
+                # NB - also check if divisible by two and integer?
+                aa_samples = self.numSamples
+            else:
+                logging.warning('Invalid number of MSAA samples provided, must be '
+                                'integer greater than two. Disabling.')
+                self.multiSample = False
+
         # options that the user might want
-        config = GL.Config(depth_size=8, double_buffer=True,
-                           stencil_size=stencil_size, stereo=self.stereo,
+        config = GL.Config(depth_size=8, double_buffer=True, sample_buffers=sample_buffers,
+                           samples=aa_samples, stencil_size=stencil_size, stereo=self.stereo,
                            vsync=vsync)
-
-        # monkey patches for retina display if needed
-        def retinaAttach(self, canvas):
-            """Replaces pyglet.gl.cocoa.CocoaContext.attach method
-            """
-            super(CocoaContext, self).attach(canvas)
-            self._nscontext.setView_(canvas.nsview)
-            try:
-                self._nscontext.view().setWantsBestResolutionOpenGLSurface_(1)
-            except AttributeError:
-                pass
-            self.set_current()
-
-        def retina_on_resize(self, width, height):
-            """Insert as method """
-            view = self.context._nscontext.view()
-            bounds = view.convertRectToBacking_(view.bounds()).size
-            back_width, back_height = (int(bounds.width), int(bounds.height))
-
-            GL.glViewport(0, 0, back_width, back_height)
-            GL.glMatrixMode(GL.GL_PROJECTION)
-            GL.glLoadIdentity()
-            GL.glOrtho(0, width, 0, height, -1, 1)
-            GL.glMatrixMode(GL.GL_MODELVIEW)
-
-        if self.useRetina and sys.platform=='darwin':
-            from pyglet.gl.cocoa import CocoaContext
-            CocoaContext.attach = retinaAttach
-            from pyglet.window.cocoa import CocoaWindow
-            CocoaWindow.on_resize = retina_on_resize
 
         defDisp = pyglet.window.get_platform().get_default_display()
         allScrs = defDisp.get_screens()
@@ -1410,16 +1496,18 @@ class Window(object):
             else:
                 self._hw_handle = self.winHandle._hwnd
         elif sys.platform == 'darwin':
+            if self.useRetina:
+                global retinaContext
+                retinaContext = self.winHandle.context._nscontext
+                view = retinaContext.view()
+                bounds = view.convertRectToBacking_(view.bounds()).size
+                self.size = numpy.array([int(bounds.width), int(bounds.height)])
             try:
                 # python 32bit (1.4. or 1.2 pyglet)
                 self._hw_handle = self.winHandle._window.value
             except Exception:
                 # pyglet 1.2 with 64bit python?
                 self._hw_handle = self.winHandle._nswindow.windowNumber()
-            if self.useRetina:
-                view = self.context._nscontext.view()
-                bounds = view.convertRectToBacking_(view.bounds()).size
-                self.size = (int(bounds.width), int(bounds.height))
         elif sys.platform == 'linux2':
             self._hw_handle = self.winHandle._window
 
@@ -1455,8 +1543,8 @@ class Window(object):
                         (thisScreen.height - self.size[1]) / 2]
         if not self._isFullScr:
             # add the necessary amount for second screen
-            self.winHandle.set_location(self.pos[0] + thisScreen.x,
-                                        self.pos[1] + thisScreen.y)
+            self.winHandle.set_location(int(self.pos[0] + thisScreen.x),
+                                        int(self.pos[1] + thisScreen.y))
 
         try:  # to load an icon for the window
             iconFile = os.path.join(psychopy.prefs.paths['resources'],
@@ -1859,7 +1947,7 @@ class Window(object):
         frameTimes.sort()
         # median-most slice
         msPFmed = 1000. * float(numpy.average(
-            frameTimes[(nFrames - num2avg) / 2:(nFrames + num2avg) / 2]))
+            frameTimes[((nFrames - num2avg) // 2):((nFrames + num2avg) // 2)]))
         msPFavg = 1000. * float(numpy.average(frameTimes))
         msPFstd = 1000. * float(numpy.std(frameTimes))
         msdrawAvg = 1000. * float(numpy.average(drawTimes))
@@ -1948,9 +2036,19 @@ def _onResize(width, height):
     Override this event handler with your own to create another
     projection, for example in perspective.
     """
+    global retinaContext
+
     if height == 0:
         height = 1
-    GL.glViewport(0, 0, width, height)
+
+    if retinaContext is not None:
+        view = retinaContext.view()
+        bounds = view.convertRectToBacking_(view.bounds()).size
+        back_width, back_height = (int(bounds.width), int(bounds.height))
+    else:
+        back_width, back_height = width, height
+
+    GL.glViewport(0, 0, back_width, back_height)
     GL.glMatrixMode(GL.GL_PROJECTION)
     GL.glLoadIdentity()
     GL.glOrtho(-1, 1, -1, 1, -1, 1)

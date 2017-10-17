@@ -1,12 +1,19 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+# Part of the PsychoPy library
+# Copyright (C) 2015 Jonathan Peirce
+# Distributed under the terms of the GNU General Public License (GPL).
+
 """PhotoResearch spectrophotometers
 See http://www.photoresearch.com/
 
 --------
 """
-# Part of the PsychoPy library
-# Copyright (C) 2015 Jonathan Peirce
-# Distributed under the terms of the GNU General Public License (GPL).
 
+from builtins import str
+from builtins import range
+from builtins import object
 from psychopy import logging
 import struct
 import sys
@@ -50,7 +57,7 @@ class PR650(object):
             logging.console.setLevel(logging.INFO)  # will give more info
             logging.console.setLevel(logging.DEBUG)  # log all communications
 
-        If you're using a keyspan adapter (at least on OS X) be aware that
+        If you're using a keyspan adapter (at least on macOS) be aware that
         it needs a driver installed. Otherwise no ports wil be found.
 
         Also note that the attempt to connect to the PR650 must occur within
@@ -93,9 +100,9 @@ class PR650(object):
             self._error(msg % sys.platform)
         # setup the params for PR650 comms
         if self.OK:
-            self.com.setBaudrate(9600)
-            self.com.setParity('N')  # none
-            self.com.setStopbits(1)
+            self.com.baudrate = 9600
+            self.com.parity = 'N'  # none
+            self.com.stopbits = 1
             try:
                 # Pyserial >=2.6 throws an exception when trying to open a
                 # serial port that is already open. Catching that exception
@@ -315,9 +322,9 @@ class PR655(PR650):
             self._error(msg % self.portString)
         # setup the params for PR650 comms
         if self.OK:
-            self.com.setBaudrate(9600)
-            self.com.setParity('N')  # none
-            self.com.setStopbits(1)
+            self.com.baudrate = 9600
+            self.com.parity = 'N'  # none
+            self.com.stopbits = 1
             try:
                 self.com.close()  # attempt to close if it's currently open
                 self.com.open()

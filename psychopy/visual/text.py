@@ -1,12 +1,15 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 '''Class of text stimuli to be displayed in a :class:`~psychopy.visual.Window`
 '''
+from __future__ import division
 
 # Part of the PsychoPy library
 # Copyright (C) 2015 Jonathan Peirce
 # Distributed under the terms of the GNU General Public License (GPL).
 
+from builtins import str
 import os
 import glob
 
@@ -109,6 +112,10 @@ class TextStim(BaseVisualStim, ColorMixin):
         super(TextStim, self).__init__(
             win, units=units, name=name, autoLog=False)
 
+        if win.blendMode=='add':
+            logging.warning("Pyglet text does not honor the Window setting "
+                            "`blendMode='add'` so 'avg' will be used for the "
+                            "text (but objects drawn after can be added)")
         self._needUpdate = True
         self._needVertexUpdate = True
         # use shaders if available by default, this is a good thing
@@ -183,7 +190,7 @@ class TextStim(BaseVisualStim, ColorMixin):
             else:
                 msg = ("TextStim does now know a default letter height "
                        "for units %s")
-                raise AttributeError, msg % repr(self.units)
+                raise AttributeError(msg % repr(self.units))
         self.__dict__['height'] = height
         self._heightPix = convertToPix(pos=numpy.array([0, 0]),
                                        vertices=numpy.array([0, self.height]),
@@ -271,7 +278,7 @@ class TextStim(BaseVisualStim, ColorMixin):
         if text == self.text:
             return
         if text != None:  # make sure we have unicode object to render
-            self.__dict__['text'] = unicode(text)
+            self.__dict__['text'] = str(text)
         if self.useShaders:
             self._setTextShaders(text)
         else:
@@ -350,8 +357,8 @@ class TextStim(BaseVisualStim, ColorMixin):
 
         # coords:
         if self.alignHoriz in ['center', 'centre']:
-            left = -self.width / 2.0
-            right = self.width / 2.0
+            left = -self.width/2.0
+            right = self.width/2.0
         elif self.alignHoriz == 'right':
             left = -self.width
             right = 0.0
@@ -360,8 +367,8 @@ class TextStim(BaseVisualStim, ColorMixin):
             right = self.width
         # how much to move bottom
         if self.alignVert in ['center', 'centre']:
-            bottom = -self._fontHeightPix / 2.0
-            top = self._fontHeightPix / 2.0
+            bottom = -self._fontHeightPix/2.0
+            top = self._fontHeightPix/2.0
         elif self.alignVert == 'top':
             bottom = -self._fontHeightPix
             top = 0
@@ -481,7 +488,7 @@ class TextStim(BaseVisualStim, ColorMixin):
             right = self.width
         # how much to move bottom
         if self.alignVert in ('center', 'centre'):
-            bottom = -self._fontHeightPix / 2.0
+            bottom = -self._fontHeightPix /  2.0
             top = self._fontHeightPix / 2.0
         elif self.alignVert == 'top':
             bottom = -self._fontHeightPix
@@ -631,7 +638,7 @@ class TextStim(BaseVisualStim, ColorMixin):
                 wrapWidth = defaultWrapWidth[self.units]
             else:
                 msg = "TextStim does now know a default wrap width for units %s"
-                raise AttributeError, msg % repr(self.units)
+                raise AttributeError(msg % repr(self.units))
         self.__dict__['wrapWidth'] = wrapWidth
         verts = numpy.array([self.wrapWidth, 0])
         self._wrapWidthPix = convertToPix(pos=numpy.array([0, 0]),
@@ -679,6 +686,7 @@ class TextStim(BaseVisualStim, ColorMixin):
         if win is None:
             win = self.win
         self._selectWindow(win)
+        blendMode = win.blendMode  # keep track for reset later
 
         GL.glPushMatrix()
         # for PyOpenGL this is necessary despite pop/PushMatrix, (not for
@@ -708,7 +716,7 @@ class TextStim(BaseVisualStim, ColorMixin):
             #       desiredRGB.ctypes.data_as(ctypes.POINTER(ctypes.c_float)))
             #  # set the texture to be texture unit 0
             GL.glUniform3f(
-                GL.glGetUniformLocation(self.win._progSignedTexFont, "rgb"),
+                GL.glGetUniformLocation(self.win._progSignedTexFont, b"rgb"),
                 desiredRGB[0], desiredRGB[1], desiredRGB[2])
 
         else:  # color is set in texture, so set glColor to white
@@ -725,7 +733,7 @@ class TextStim(BaseVisualStim, ColorMixin):
                 GL.glTranslatef(-self.width, 0, 0)  # NB depth is set already
             if self.alignHoriz in ['center', 'centre']:
                 # NB depth is set already
-                GL.glTranslatef(-self.width / 2, 0, 0)
+                GL.glTranslatef(-self.width/2, 0, 0)
 
             # unbind the mask texture regardless
             GL.glActiveTexture(GL.GL_TEXTURE1)
@@ -743,6 +751,10 @@ class TextStim(BaseVisualStim, ColorMixin):
             if self._needUpdate:
                 self._updateList()
             GL.glCallList(self._listID)
+
+        # pyglets text.draw() method alters the blend func so reassert ours
+        win.setBlendMode(blendMode, log=False)
+
         if self.useShaders:
             # disable shader (but command isn't available pre-OpenGL2.0)
             GL.glUseProgram(0)

@@ -12,7 +12,10 @@
 /.ropeproject/history
 /.ropeproject/objectdb
 /.spyderproject
+/.spyproject
 /.vscode
+/.cache
+/.idea
 
 # Compiled source #
 ###################
@@ -58,6 +61,7 @@ nonSVN
 ###################################
 PsyScope*
 psychopy1
+psychojs.zip
 
 psychopy/demos/coder/misc/frame*
 psychopy/demos/*.psydat
@@ -66,6 +70,7 @@ psychopy/*/*/*/data/*.xlsx
 psychopy/*/*/*/data/*.psydat
 psychopy/demos/*/*/*.pickle
 psychopy/demos/*/*/*.psydat
+psychopy/demos/*/*/html
 
 psychopy/tests/*Out.*
 psychopy/tests/data/*_local.png
@@ -79,6 +84,7 @@ docs/source/changelog.rst
 sitePrefs.cfg
 appData.cfg
 
+*lastrun.py
 *.iohpid
 *.paths
 *.EDF
@@ -89,6 +95,5 @@ appData.cfg
 # Documentation generated files #
 #################################
 .coverage
-.idea
 builddocs.sh
 nonSphinx

@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 ################
 # see notes at bottom for requirements
+from __future__ import print_function
 import glob
 import os
 import sys
@@ -60,13 +61,16 @@ setup(
                       'pp', 'ppauto', 'ppcommon', 'pptransport', 'ppworker',
                       'pyo', 'greenlet', 'vlc', 'zmq', 'tornado',
                       'psutil',  # for iohub
-                      'pysoundcard', 'soundfile',
+                      'pysoundcard', 'soundfile', 'sounddevice',
                       'cv2',
                       'xlwt',  # writes excel files for pandas
+                      'UserString',
                       ],
             packages=['wx', 'pyglet', 'pygame', 'OpenGL', 'psychopy', 'pytz',
                       'scipy', 'matplotlib', 'lxml', 'xml', 'openpyxl',
                       'moviepy', 'imageio',
+                      'pysoundcard', 'soundfile', 'sounddevice',
+                      'cffi','pycparser',
                       'PyQt4',
                       'PIL',  # 'Image',
                       'objc', 'Quartz', 'AppKit', 'QTKit', 'Cocoa',
@@ -86,6 +90,9 @@ setup(
                       # these aren't needed, but liked
                       'psychopy_ext', 'pyfilesec', 'rusocsci',
                       'bidi',  # for right-left language conversions
+                      # for Py3 compatibility
+                      'future', 'past', 'lib2to3',
+                      'json_tricks',  # allows saving arrays/dates in json
                       ],
             excludes=['bsddb', 'jinja2', 'IPython','ipython_genutils','nbconvert',
                       'OpenGL','OpenGL.WGL','OpenGL.raw.WGL.*',

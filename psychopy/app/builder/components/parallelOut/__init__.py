@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 # Part of the PsychoPy library
 # Copyright (C) 2015 Jonathan Peirce
 # Distributed under the terms of the GNU General Public License (GPL).
@@ -77,6 +80,7 @@ class ParallelOutComponent(BaseComponent):
         if self.params['address'].val == 'LabJack U3':
             code = ("from psychopy.hardware import labjacks\n"
                     "%(name)s = labjacks.U3()\n"
+                    "%(name)s.status = None\n"
                     % self.params)
             buff.writeIndentedLines(code)
         else:

@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 # /System/Library/Frameworks/Carbon.framework/Versions/A/Frameworks/HIToolbox.framework/Headers/Events.h
 
 QZ_ESCAPE = 0x35
@@ -80,7 +83,7 @@ QZ_F3=160 #Keycode on Apple wireless kb
 QZ_F4=131 #Keycode on Apple wireless kb
 
 code2label={}
-for k,v in locals().items():
+for k,v in list(locals().items()):
     if k.startswith('QZ_'):
         klabel = u''+k[3:].lower()
         code2label[klabel] = v

@@ -1,4 +1,6 @@
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
+
 """
 ioHub Python Module
 .. file: ioHub/devices/xinput/xinput_h.py
@@ -12,6 +14,7 @@ Distributed under the terms of the GNU General Public License
 .. moduleauthor:: Sol Simpson <sol@isolver-software.com> + 
 contributors, please see credits section of documentation.
 """
+from __future__ import print_function
 
 
 import ctypes,ctypes.wintypes
@@ -321,14 +324,14 @@ class XINPUT_STATE(ctypes.Structure):
                 
 
     def printState(self):
-        print "XINPUT_GAMEPAD (packet %d):"%(self.dwPacketNumber)
-        print "\twButtons: ",self.Gamepad.wButtons
-        print "\tbLeftTrigger: ",self.Gamepad.bLeftTrigger
-        print "\tbRightTrigger: ",self.Gamepad.bRightTrigger
-        print "\tsThumbLX: ",self.Gamepad.sThumbLX
-        print "\tsThumbLY: ",self.Gamepad.sThumbLY
-        print "\tsThumbRX: ",self.Gamepad.sThumbRX
-        print "\tsThumbRY: ",self.Gamepad.sThumbRY
+        print("XINPUT_GAMEPAD (packet %d):"%(self.dwPacketNumber))
+        print("\twButtons: ",self.Gamepad.wButtons)
+        print("\tbLeftTrigger: ",self.Gamepad.bLeftTrigger)
+        print("\tbRightTrigger: ",self.Gamepad.bRightTrigger)
+        print("\tsThumbLX: ",self.Gamepad.sThumbLX)
+        print("\tsThumbLY: ",self.Gamepad.sThumbLY)
+        print("\tsThumbRX: ",self.Gamepad.sThumbRX)
+        print("\tsThumbRY: ",self.Gamepad.sThumbRY)
         
 #
 # XINPUT_VIBRATION

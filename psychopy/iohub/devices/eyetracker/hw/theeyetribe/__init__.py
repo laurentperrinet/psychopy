@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 """
 ioHub
 Common Eye Tracker Interface for TheEyeTribe system.
@@ -9,5 +12,6 @@ Distributed under the terms of the GNU General Public License (GPL version 3 or 
 .. moduleauthor:: ??
 .. fileauthor:: ??
 """
+from __future__ import absolute_import
 
-from eyetracker import *
+from .eyetracker import *

@@ -1,4 +1,6 @@
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
+
 """
 Demonstrates how to use two Condition Variables to specify a temporal filter
 based on a start and end time. With the ConditionVariableBasedIP two columns of the
@@ -7,6 +9,7 @@ instances of the IP.
 
 @author: Sol
 """
+from __future__ import print_function
 
 from psychopy.iohub.datastore.pandas import ioHubPandasDataView
 from psychopy.iohub.datastore.pandas.interestperiod import ConditionVariableBasedIP
@@ -14,10 +17,10 @@ from psychopy.iohub.datastore.pandas.interestperiod import ConditionVariableBase
 exp_data=ioHubPandasDataView('io_stroop.hdf5')
 
 # Display the first 20 unfiltered MOUSE_MOVE events
-print '** KEYBOARD_PRESS Events (first 20):'
-print 
-print exp_data.KEYBOARD_PRESS.head(20)
-print
+print('** KEYBOARD_PRESS Events (first 20):')
+print() 
+print(exp_data.KEYBOARD_PRESS.head(20))
+print()
 
 # Create a Condition Variable based Interest Period. 
 # Interest Periods define a start and end time; any events that have a 
@@ -34,10 +37,10 @@ ip=ConditionVariableBasedIP(name='cv_ip',source_df=exp_data.condition_variables,
 # Display the first 20 IP 's found using the criteria specified when creating 
 # the ConditionVariableBasedIP
 #
-print '** Condition Variable Interest Periods:'
-print 
-print ip.ip_df
-print
+print('** Condition Variable Interest Periods:')
+print() 
+print(ip.ip_df)
+print()
 
 # Now we can filter out events from any event dataframe using the IP created.
 # Any events that do not occur within one of the interest periods found in the
@@ -45,9 +48,9 @@ print
 #
 ip_events=ip.filter(exp_data.KEYBOARD_PRESS)
 
-print '** KEYBOARD_PRESS events which occurred during an IP:'
-print 
-print ip_events.head(20)
-print 
+print('** KEYBOARD_PRESS events which occurred during an IP:')
+print() 
+print(ip_events.head(20))
+print() 
 
 exp_data.close()

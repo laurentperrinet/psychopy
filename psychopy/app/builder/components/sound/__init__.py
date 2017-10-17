@@ -1,7 +1,11 @@
-# Part of the PsychoPy library
-# Copyright (C) 2015 Jonathan Peirce
-# Distributed under the terms of the GNU General Public License (GPL).
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
+"""
+Part of the PsychoPy library
+Copyright (C) 2015 Jonathan Peirce
+Distributed under the terms of the GNU General Public License (GPL).
+"""
 from os import path
 from .._base import BaseComponent, Param, getInitVals, _translate
 
@@ -65,7 +69,7 @@ class SoundComponent(BaseComponent):
         # the sound object is unusual, because it is
         buff.writeIndented("# start/stop %(name)s\n" % (self.params))
         # do this EVERY frame, even before/after playing?
-        self.writeParamUpdates(buff, 'frame')
+        self.writeParamUpdates(buff, 'set every frame')
         self.writeStartTestCode(buff)
         code = "%s.play()  # start the sound (it finishes automatically)\n"
         buff.writeIndented(code % self.params['name'])

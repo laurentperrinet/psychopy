@@ -1,5 +1,5 @@
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
-from __future__ import division
 
 """
 ioHub
@@ -11,6 +11,12 @@ Distributed under the terms of the GNU General Public License (GPL version 3 or 
 .. moduleauthor:: Sol Simpson <sol@isolver-software.com> + contributors, please see credits section of documentation.
 .. fileauthor:: Sol Simpson <sol@isolver-software.com>
 """
+from __future__ import division
+from __future__ import print_function
+
+from builtins import zip
+from builtins import object
+from future.utils import with_metaclass
 
 import gc, os, sys, copy
 import collections
@@ -70,7 +76,7 @@ class ioObjectMetaClass(type):
             return None
         return parent
 
-class ioObject(object):
+class ioObject(with_metaclass(ioObjectMetaClass, object)):
     """
     The ioObject class is the base class for all ioHub Device and DeviceEvent classes.
 
@@ -78,7 +84,6 @@ class ioObject(object):
     and device events like Message, KeyboardPressEvent, MouseMoveEvent, etc.)
     also include the methods and attributes of this class.
     """
-    __metaclass__= ioObjectMetaClass
     __slots__=['_attribute_values',]
     def __init__(self,*args,**kwargs):
         self._attribute_values=[]
@@ -101,7 +106,7 @@ class ioObject(object):
 
         Return (dict): dictionary of ioObjects attribute_name, attributes values.
         """
-        return dict(zip(self.CLASS_ATTRIBUTE_NAMES,self._attribute_values))
+        return dict(list(zip(self.CLASS_ATTRIBUTE_NAMES,self._attribute_values)))
 
     def _asList(self):
         """
@@ -156,7 +161,7 @@ class Computer(object):
     increased.
 
     .. note:: Setting process affinities and manipulating process priority is not
-        currently supported on OS X.
+        currently supported on macOS.
 
     The Computer class also has methods to monitor current Computer memory
     and CPU usage. The psutil Process object can access
@@ -260,7 +265,7 @@ class Computer(object):
         """
         Returns the current processes priority as a string.
 
-        This method is not supported on OS X.
+        This method is not supported on macOS.
 
         :return: 'normal', 'high', or 'realtime'
         """
@@ -279,7 +284,7 @@ class Computer(object):
         If level is 'normal', Python GC is also enabled.
         If level is 'high' or 'realtime', and disable_gc is True, then the Python garbage collection (GC) thread is suspended.
 
-        This method is not supported on OS X.
+        This method is not supported on macOS.
 
         :return: Priority level of process when method returns.
         """
@@ -304,7 +309,7 @@ class Computer(object):
 
         On Linux, the process is set to a nice level of -10.
 
-        This method is not supported on OS X.
+        This method is not supported on macOS.
 
         Args:
             disable_gc (bool): True = Turn of the Python Garbage Collector. False = Leave the Garbage Collector running. Default: True
@@ -341,7 +346,7 @@ class Computer(object):
 
         On Linux, the process is set to a nice level of 16.
 
-        This method is not supported on OS X.
+        This method is not supported on macOS.
 
         Args:
             disable_gc (bool): True = Turn of the Python Garbage Collector. False = Leave the Garbage Collector running. Default: True
@@ -377,7 +382,7 @@ class Computer(object):
         On Linux, sets the nice level of the process back to the value being used
         prior to the call to enableRealTimePriority()
 
-        This method is not supported on OS X.
+        This method is not supported on macOS.
 
         Return:
             None
@@ -397,7 +402,7 @@ class Computer(object):
         On Linux, sets the nice level of the process back to the value being used
         prior to the call to enableHighPriority()
 
-        This method is not supported on OS X.
+        This method is not supported on macOS.
 
         Return:
             None
@@ -475,7 +480,7 @@ class Computer(object):
 
         **But in this case, why are you using the ioHub package at all? ;)**
 
-        This method is not supported on OS X.
+        This method is not supported on macOS.
 
         Args:
             None
@@ -566,7 +571,7 @@ class Computer(object):
             Computer.setProcessAffinities([2,3],[4,5])
             Computer.setAllOtherProcessesAffinity([0,1,6,7],[Computer.currentProcessID,Computer.iohub_process_id])
         else:
-            print "autoAssignAffinities does not support %d processors."%(cpu_count,)
+            print("autoAssignAffinities does not support %d processors."%(cpu_count,))
 
     @staticmethod
     def getCurrentProcessAffinity():
@@ -963,9 +968,9 @@ class Device(ioObject):
                 self.clearEvents(eventTypeID,filter_id=filter_id, call_proc_events=False)
         else:
             if filter_id:
-                [currentEvents.extend([fe for fe in l if fe[DeviceEvent.EVENT_FILTER_ID_INDEX] == filter_id]) for l in self._iohub_event_buffer.values()]
+                [currentEvents.extend([fe for fe in l if fe[DeviceEvent.EVENT_FILTER_ID_INDEX] == filter_id]) for l in list(self._iohub_event_buffer.values())]
             else:
-                [currentEvents.extend(l) for l in self._iohub_event_buffer.values()]
+                [currentEvents.extend(l) for l in list(self._iohub_event_buffer.values())]
 
             if clearEvents is True and len(currentEvents)>0:
                 self.clearEvents(filter_id=filter_id, call_proc_events=False)
@@ -1003,7 +1008,7 @@ class Device(ioObject):
                                 deque(maxlen=self.event_buffer_length)).clear()
         else:
             if filter_id:
-                for event_type, event_deque in self._iohub_event_buffer.items():
+                for event_type, event_deque in list(self._iohub_event_buffer.items()):
                     newque = deque([e for e in event_deque if e[DeviceEvent.EVENT_FILTER_ID_INDEX] != filter_id], maxlen=self.event_buffer_length)
                     self._iohub_event_buffer[event_type] = newque
             else:
@@ -1103,7 +1108,7 @@ class Device(ioObject):
         return False
 
     def enableFilters(self,yes=True):
-        for f in self._filters.values():
+        for f in list(self._filters.values()):
             f.enable = yes
 
     def _handleEvent(self,e):
@@ -1114,7 +1119,7 @@ class Device(ioObject):
         # Add the event to any filters bound to the device which
         # list wanting the event's type and events filter_id
         input_evt_filter_id = e[DeviceEvent.EVENT_FILTER_ID_INDEX]
-        for event_filter in self._filters.values():
+        for event_filter in list(self._filters.values()):
             if event_filter.enable is True:
                 current_filter_id = event_filter.filter_id
                 if current_filter_id != input_evt_filter_id:
@@ -1135,7 +1140,7 @@ class Device(ioObject):
             self._event_listeners.setdefault(ei,[]).append(l)
 
     def _removeEventListener(self,l):
-        for etypelisteners in self._event_listeners.values():
+        for etypelisteners in list(self._event_listeners.values()):
             if l in etypelisteners:
                 etypelisteners.remove(l)
 
@@ -1145,7 +1150,7 @@ class Device(ioObject):
     def getCurrentDeviceState(self, clear_events=True):
         result_dict={}
         self._iohub_server.processDeviceEvents()
-        events = {key:tuple(value) for key, value in self._iohub_event_buffer.items()}
+        events = {key:tuple(value) for key, value in list(self._iohub_event_buffer.items())}
         result_dict['events'] = events
         if clear_events:
             self.clearEvents(call_proc_events=False)
@@ -1511,7 +1516,7 @@ class DeviceEvent(ioObject):
 
     @classmethod
     def createEventAsDict(cls,values):
-        return dict(zip(cls.CLASS_ATTRIBUTE_NAMES,values))
+        return dict(list(zip(cls.CLASS_ATTRIBUTE_NAMES,values)))
 
     #noinspection PyUnresolvedReferences
     @classmethod
@@ -1525,7 +1530,7 @@ class DeviceEvent(ioObject):
 import sys
 
 def import_device(module_path, device_class_name):
-    module = __import__(module_path, fromlist=[device_class_name])
+    module = __import__(module_path, fromlist=["{}".format(device_class_name)])
     device_class=getattr(module, device_class_name)
 
     setattr(sys.modules[__name__], device_class_name, device_class)

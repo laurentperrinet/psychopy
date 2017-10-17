@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 # Part of the PsychoPy library
 # Copyright (C) 2015 Jonathan Peirce
 # Distributed under the terms of the GNU General Public License (GPL).
@@ -24,4 +27,4 @@ if 'testMonitor' not in getAllMonitors():
                      # use _translate( ) => issues
                      notes='default (not very useful) monitor')
     defMon.setSizePix([1024, 768])
-    defMon.saveMon()
+    defMon.save()

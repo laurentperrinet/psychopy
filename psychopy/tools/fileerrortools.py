@@ -1,4 +1,5 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 # Part of the PsychoPy library
 # Copyright (C) 2015 Jonathan Peirce
@@ -7,6 +8,7 @@
 """Functions and classes related to file and directory error handling
 """
 
+from builtins import str
 import os
 import glob
 
@@ -34,10 +36,12 @@ def handleFileCollision(fileName, fileCollisionMethod):
     elif fileCollisionMethod == 'rename':
         rootName, extension = os.path.splitext(fileName)
         matchingFiles = glob.glob("%s*%s" % (rootName, extension))
-        count = len(matchingFiles)
 
         # Build the renamed string.
-        fileName = "%s_%d%s" % (rootName, count, extension)
+        if not matchingFiles:
+            fileName = "%s%s" % (rootName, extension)
+        else:
+            fileName = "%s_%d%s" % (rootName, len(matchingFiles), extension)
 
         # Check to make sure the new fileName hasn't been taken too.
         if os.path.exists(fileName):

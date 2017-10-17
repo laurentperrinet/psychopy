@@ -1,16 +1,22 @@
-"""Extensible set of components for the PsychoPy Builder view
-"""
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 # Part of the PsychoPy library
 # Copyright (C) 2015 Jonathan Peirce
 # Distributed under the terms of the GNU General Public License (GPL).
 
-from __future__ import absolute_import
+"""Extensible set of components for the PsychoPy Builder view
+"""
 
+from __future__ import absolute_import
+from __future__ import print_function
+
+from builtins import str
+from past.builtins import basestring
 import os
 import glob
 import copy
 import shutil
-import wx
 from PIL import Image
 from os.path import join, dirname, abspath, split
 from importlib import import_module  # helps python 2.7 -> 3.x migration
@@ -27,16 +33,21 @@ for filename in pycFiles:
             os.remove(filename)
         except:
             pass  # may not have sufficient privs
-        
-def pilToBitmap(pil, scaleFactor=1.0):
-    image = wx.EmptyImage(pil.size[0], pil.size[1])
 
-    try:  # For PIL.
+def pilToBitmap(pil, scaleFactor=1.0):
+    import wx
+    if wx.version()<"4":
+        image = wx.EmptyImage(pil.size[0], pil.size[1])
+    else:
+        image = wx.Image(pil.size[0], pil.size[1])
+
+    # set the RGB values
+    if hasattr(pil, 'tobytes'):
+        image.SetData(pil.convert("RGB").tobytes())
+        image.SetAlphaBuffer(pil.convert("RGBA").tobytes()[3::4])
+    else:
         image.SetData(pil.convert("RGB").tostring())
         image.SetAlphaData(pil.convert("RGBA").tostring()[3::4])
-    except Exception:  # For Pillow.
-        image.SetData(pil.convert("RGB").tobytes())
-        image.SetAlphaData(pil.convert("RGBA").tobytes()[3::4])
 
     image.Rescale(image.Width * scaleFactor, image.Height * scaleFactor)
     return image.ConvertToBitmap()  # wx.Image and wx.Bitmap are different
@@ -51,7 +62,7 @@ def getIcons(filename=None):
     icons = {}
     if filename is None:
         filename = join(dirname(abspath(__file__)), 'base.png')
-        
+
     # get the low-res version first
     im = Image.open(filename)
     icons['24'] = pilToBitmap(im, scaleFactor=0.5)
@@ -136,7 +147,7 @@ def getComponents(folder=None, fetchIcons=True):
 
     components = {}
     # setup a default icon
-    if fetchIcons and 'default' not in icons.keys():
+    if fetchIcons and 'default' not in icons:
         icons['default'] = getIcons(filename=None)
 
     # go through components in directory
@@ -200,11 +211,11 @@ def getAllComponents(folderList=(), fetchIcons=True):
     User-defined components will override built-ins with the same name.
     """
     if isinstance(folderList, basestring):
-        raise TypeError, 'folderList should be iterable, not a string'
+        raise TypeError('folderList should be iterable, not a string')
     components = getComponents(fetchIcons=fetchIcons)  # get the built-ins
     for folder in folderList:
         userComps = getComponents(folder)
-        for thisKey in userComps.keys():
+        for thisKey in userComps:
             components[thisKey] = userComps[thisKey]
     return components
 
@@ -212,19 +223,33 @@ def getAllComponents(folderList=(), fetchIcons=True):
 def getAllCategories(folderList=()):
     allComps = getAllComponents(folderList)
     allCats = ['Stimuli', 'Responses', 'Custom']
-    for name, thisComp in allComps.items():
+    for name, thisComp in list(allComps.items()):
         for thisCat in thisComp.categories:
             if thisCat not in allCats:
                 allCats.append(thisCat)
     return allCats
 
 
-def getInitVals(params):
+def getInitVals(params, target="PsychoPy"):
     """Works out a suitable initial value for a parameter (e.g. to go into the
     __init__ of a stimulus object, avoiding using a variable name if possible
     """
     inits = copy.deepcopy(params)
-    for name in params.keys():
+    for name in params:
+
+        if target == "PsychoJS":
+            # convert (0,0.5) to [0,0.5] but don't convert "rand()" to "rand[]"
+            valStr = str(inits[name].val).strip()
+            if valStr.startswith("(") and valStr.endswith(")"):
+                inits[name].val = inits[name].val.replace("(", "[", 1)
+                inits[name].val = inits[name].val[::-1].replace(")", "]", 1)[::-1]  # replace from right
+            # filenames (e.g. for image) need to be loaded from resources
+            if name in ["image", "mask", "sound"]:
+                val = str(inits[name].val)
+                if val != "None":
+                    inits[name].val = ("psychoJS.resourceManager.getResource({})"
+                                       .format(inits[name]))
+                    inits[name].valType = 'code'
 
         if not hasattr(inits[name], 'updates'):  # might be settings parameter instead
             continue
@@ -247,10 +272,14 @@ def getInitVals(params):
                       'phase', 'opacity',
                       'volume',  # sounds
                       'coherence', 'nDots', 'fieldSize', 'dotSize', 'dotLife',
-                      'dir', 'speed']:
+                      'dir', 'speed',
+                      'contrast', 'moddepth', 'envori', 'envphase', 'envsf',
+                      'noiseClip', 'noiseBWO', 'noiseFilterUpper', 'noiseFilterLower',
+                      'noiseBaseSf', 'noiseBW', 'noiseElementSize', 'noiseFilterOrder',
+                      'noiseFractalPower']:
             inits[name].val = "1.0"
             inits[name].valType = 'code'
-        elif name in ['image', 'mask']:
+        elif name in ['image', 'mask', 'envelope', 'carrier']:
             inits[name].val = "sin"
             inits[name].valType = 'str'
         elif name == 'texture resolution':
@@ -274,10 +303,23 @@ def getInitVals(params):
         elif name == 'sound':
             inits[name].val = "A"
             inits[name].valType = 'str'
+        elif name == 'blendmode':
+            inits[name].val = "avg"
+            inits[name].valType = 'str'
+        elif name == 'beat':
+            inits[name].val = "False"
+            inits[name].valType = 'str'
+        elif name == 'noiseImage':
+            inits[name].val = "None"
+            inits[name].valType = 'str'
+        elif name == 'noiseType':
+            inits[name].val = 'Binary'
+            inits[name].valType = 'str'
         else:
             print("I don't know the appropriate default value for a '%s' "
                   "parameter. Please email the mailing list about this error" %
                   name)
+
     return inits
 
 tooltips = {}

@@ -1,7 +1,8 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 """A central location to store information about urls
 """
-
-from . import wxIDs
 
 urls = dict()
 
@@ -23,9 +24,9 @@ urls['prefs.builder'] = general + "prefs.html#builder-settings"
 urls['prefs.connections'] = general + "prefs.html#connection-settings"
 
 # links keyed by wxIDs (e.g. menu item IDs)
-urls[wxIDs.psychopyHome] = "http://www.psychopy.org/"
-urls[wxIDs.psychopyReference] = "http://www.psychopy.org/api/api.html"
-urls[wxIDs.coderTutorial] = "http://www.psychopy.org/coder/tutorial1.html"
-urls[wxIDs.builderHelp] = urls['builder']
-urls[wxIDs.builderDemos] = "http://code.google.com/p/psychopy/downloads/list?can=2&q=demos"
-urls[wxIDs.projsAbout] = "http://www.psychopy.org/general/projects.html"
+urls['psychopyHome'] = "http://www.psychopy.org/"
+urls['psychopyReference'] = "http://www.psychopy.org/api/api.html"
+urls['coderTutorial'] = "http://www.psychopy.org/coder/tutorial1.html"
+urls['builderHelp'] = urls['builder']
+urls['builderDemos'] = "http://code.google.com/p/psychopy/downloads/list?can=2&q=demos"
+urls['projsAbout'] = "http://www.psychopy.org/general/projects.html"

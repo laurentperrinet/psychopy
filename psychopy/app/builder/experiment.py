@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 # Part of the PsychoPy library
 # Copyright (C) 2015 Jonathan Peirce
 # Distributed under the terms of the GNU General Public License (GPL).
@@ -15,21 +18,28 @@ The code that writes out a *_lastrun.py experiment file is (in order):
 
 from __future__ import absolute_import, print_function
 
+from future import standard_library
+standard_library.install_aliases()
+from builtins import str
+from past.builtins import basestring
+from builtins import object
+from collections import OrderedDict
 import re
 import os
 import xml.etree.ElementTree as xml
 from xml.dom import minidom
-import StringIO
+import io
 import codecs
 import keyword
 
 from .components import getInitVals, getComponents, getAllComponents
 import psychopy
 from psychopy import data, __version__, logging, constants
-from psychopy.constants import FOREVER
+from psychopy.constants import FOREVER, PY3
 
 from ..localization import _translate
 import locale
+import sys
 
 # predefine some regex's; deepcopy complains if do in NameSpace.__init__()
 _unescapedDollarSign_re = re.compile(r"^\$|[^\\]\$")  # detect "code wanted"
@@ -64,6 +74,7 @@ _localized = {
     'switchMethod': _translate('switchMethod')}
 #_localized = {k: _translate(k) for k in _loKeys}  # hides string from poedit
 
+scriptTarget = "PsychoPy"  # need a  global variable so that
 
 class CodeGenerationException(Exception):
     """
@@ -73,16 +84,16 @@ class CodeGenerationException(Exception):
     def __init__(self, source, message=""):
         super(CodeGenerationException, self).__init__()
         self.source = source
-        self.message = str(message)
+        self.message = message
 
     def __str__(self):
-        return str(self.source) + ": " + self.message
+        return "{}: ".format(self.source, self.message)
 
 
-class IndentingBuffer(StringIO.StringIO):
+class IndentingBuffer(io.StringIO):
 
     def __init__(self, *args, **kwargs):
-        StringIO.StringIO.__init__(self, *args, **kwargs)
+        io.StringIO.__init__(self, *args, **kwargs)
         self.oneIndent = "    "
         self.indentLevel = 0
 
@@ -113,6 +124,24 @@ class IndentingBuffer(StringIO.StringIO):
         else:
             self.indentLevel = newLevel
 
+    def write(self, text):
+        if PY3:
+            io.StringIO.write(self, "{}".format(text))
+        else:
+            io.StringIO.write(self, u"{}".format(text))
+
+
+def _findParam(name, node):
+    """Searches an XML node in search of a particular param name
+
+    :param name: str indicating the name of the attribute
+    :param node: xml element/node to be searched
+    :return: None, or a parameter child node
+    """
+    for attr in node:
+        if attr.get('name') == name:
+            return attr
+
 
 class Experiment(object):
     """
@@ -124,6 +153,7 @@ class Experiment(object):
     def __init__(self, prefs=None):
         super(Experiment, self).__init__()
         self.name = ''
+        self.filename = ''  # update during load/save xml
         self.flow = Flow(exp=self)  # every exp has exactly one flow
         self.routines = {}
         # get prefs (from app if poss or from cfg files)
@@ -140,8 +170,9 @@ class Experiment(object):
         # this can be checked by the builder that this is an experiment and a
         # compatible version
         self.psychopyVersion = __version__
-        self.psychopyLibs = ['gui', 'visual', 'core',
-                             'data', 'event', 'logging', 'sound']
+        # What libs are needed (make sound come first)
+        self.psychopyLibs = ['sound', 'gui', 'visual', 'core',
+                             'data', 'event', 'logging']
         _settingsComp = getComponents(fetchIcons=False)['SettingsComponent']
         self.settings = _settingsComp(parentName='', exp=self)
         # this will be the xml.dom.minidom.doc object for saving
@@ -184,6 +215,9 @@ class Experiment(object):
     def writeScript(self, expPath=None, target="PsychoPy"):
         """Write a PsychoPy script for the experiment
         """
+        global scriptTarget
+        scriptTarget = target
+
         self.flow._prescreenValues()
         self.expPath = expPath
         script = IndentingBuffer(u'')  # a string buffer object
@@ -202,6 +236,8 @@ class Experiment(object):
             # writes any components with a writeStartCode()
             self.flow.writeStartCode(script)
             self.settings.writeWindowCode(script)  # create our visual.Window()
+            # for JS the routine begin/frame/end code are funcs so write here
+
             # write the rest of the code for the components
             self.flow.writeBody(script)
             self.settings.writeEndCode(script)  # close log file
@@ -211,9 +247,42 @@ class Experiment(object):
             self.settings.writeInitCodeJS(script,
                                           self.psychopyVersion, localDateTime)
             self.settings.writeWindowCodeJS(script)
-            self.flow.writeResourcesCodeJS(script)
-            self.flow.writeBodyJS(script)  # includes compon init and run code
 
+            # initialise the components for all Routines in a single function
+            script.writeIndentedLines("\nfunction experimentInit() {")
+            script.setIndentLevel(1, relative=True)
+
+            # routine init sections
+            for entry in self.flow:
+                # NB each entry is a routine or LoopInitiator/Terminator
+                self._currentRoutine = entry
+                if hasattr(entry, 'writeInitCodeJS'):
+                    entry.writeInitCodeJS(script)
+
+            # create globalClock etc
+            code = ("\n// Create some handy timers\n"
+                    "globalClock = new psychoJS.core.Clock();"
+                    "  // to track the time since experiment started\n"
+                    "routineTimer = new psychoJS.core.CountdownTimer();"
+                    "  // to track time remaining of each (non-slip) routine\n"
+                    "\nreturn psychoJS.NEXT;")
+            script.writeIndentedLines(code)
+            script.setIndentLevel(-1, relative=True)
+            script.writeIndentedLines("}")
+
+            # This differs to the Python script. We can loop through all
+            # Routines once (whether or not they get used) because we're using
+            # functions that may or may not get called later.
+            # Do the Routines of the experiment first
+            for thisRoutine in list(self.routines.values()):
+                self._currentRoutine = thisRoutine
+                thisRoutine.writeRoutineBeginCodeJS(script)
+                thisRoutine.writeEachFrameCodeJS(script)
+                thisRoutine.writeRoutineEndCodeJS(script)
+            # loao resources files (images, csv files etc
+            self.flow.writeResourcesCodeJS(script)
+            # create the run() function and schedulers
+            self.flow.writeBodyJS(script)  # functions for loops and for scheduler
             self.settings.writeEndCodeJS(script)
 
         return script
@@ -225,13 +294,13 @@ class Experiment(object):
         self.xmlRoot.set('encoding', 'utf-8')
         # store settings
         settingsNode = xml.SubElement(self.xmlRoot, 'Settings')
-        for name, setting in self.settings.params.iteritems():
+        for name, setting in self.settings.params.items():
             settingNode = self._setXMLparam(
                 parent=settingsNode, param=setting, name=name)
         # store routines
         routinesNode = xml.SubElement(self.xmlRoot, 'Routines')
         # routines is a dict of routines
-        for routineName, routine in self.routines.iteritems():
+        for routineName, routine in self.routines.items():
             routineNode = self._setXMLparam(
                 parent=routinesNode, param=routine, name=routineName)
             # a routine is based on a list of components
@@ -239,7 +308,7 @@ class Experiment(object):
                 componentNode = self._setXMLparam(
                     parent=routineNode, param=component,
                     name=component.params['name'].val)
-                for name, param in component.params.iteritems():
+                for name, param in component.params.items():
                     paramNode = self._setXMLparam(
                         parent=componentNode, param=param, name=name)
         # implement flow
@@ -252,7 +321,7 @@ class Experiment(object):
                 name = loop.params['name'].val
                 elementNode.set('loopType', loop.getType())
                 elementNode.set('name', name)
-                for paramName, param in loop.params.iteritems():
+                for paramName, param in loop.params.items():
                     paramNode = self._setXMLparam(
                         parent=elementNode, param=param, name=paramName)
                     # override val with repr(val)
@@ -273,6 +342,7 @@ class Experiment(object):
         f = codecs.open(filename, 'wb', 'utf-8')
         f.write(pretty)
         f.close()
+        self.filename = filename
         return filename  # this may have been updated to include an extension
 
     def _getShortName(self, longName):
@@ -290,14 +360,14 @@ class Experiment(object):
         thisChild = xml.SubElement(parent, thisType)
         thisChild.set('name', name)
         if hasattr(param, 'val'):
-            thisChild.set('val', unicode(param.val).replace("\n", "&#10;"))
+            thisChild.set('val', "{}".format(param.val).replace("\n", "&#10;"))
         if hasattr(param, 'valType'):
             thisChild.set('valType', param.valType)
         if hasattr(param, 'updates'):
-            thisChild.set('updates', unicode(param.updates))
+            thisChild.set('updates', "{}".format(param.updates))
         return thisChild
 
-    def _getXMLparam(self, params, paramNode):
+    def _getXMLparam(self, params, paramNode, componentNode=None):
         """params is the dict of params of the builder component
         (e.g. stimulus) into which the parameters will be inserted
         (so the object to store the params should be created first)
@@ -306,13 +376,28 @@ class Experiment(object):
         name = paramNode.get('name')
         valType = paramNode.get('valType')
         val = paramNode.get('val')
+        # many components need web char newline replacement
         if not name == 'advancedParams':
             val = val.replace("&#10;", "\n")
+
+        # custom settings (to be used when
         if name == 'storeResponseTime':
             return  # deprecated in v1.70.00 because it was redundant
+        elif name == 'nVertices':  # up to 1.85 there was no shape param
+            # if no shape param then use "n vertices" only
+            if _findParam('shape', componentNode) is None:
+                if val == '2':
+                    params['shape'].val = "line"
+                elif val == '3':
+                    params['shape'].val = "triangle"
+                elif val == '4':
+                    params['shape'].val = "rectangle"
+                else:
+                    params['shape'].val = "regular polygon..."
+            params['nVertices'].val = val
         elif name == 'startTime':  # deprecated in v1.70.00
-            params['startType'].val = unicode('time (s)')
-            params['startVal'].val = unicode(val)
+            params['startType'].val = "{}".format('time (s)')
+            params['startVal'].val = "{}".format(val)
             return  # times doesn't need to update its type or 'updates' rule
         elif name == 'forceEndTrial':  # deprecated in v1.70.00
             params['forceEndRoutine'].val = bool(val)
@@ -320,15 +405,22 @@ class Experiment(object):
         elif name == 'forceEndTrialOnPress':  # deprecated in v1.70.00
             params['forceEndRoutineOnPress'].val = bool(val)
             return  # forceEndTrial doesn't need to update  type or 'updates'
+        elif name == 'forceEndRoutineOnPress':
+            if val is True:
+                val = "any click"
+            elif val is False:
+                val = "never"
+            params['forceEndRoutineOnPress'].val = val
+            return
         elif name == 'trialList':  # deprecated in v1.70.00
             params['conditions'].val = eval(val)
             return  # forceEndTrial doesn't need to update  type or 'updates'
         elif name == 'trialListFile':  # deprecated in v1.70.00
-            params['conditionsFile'].val = unicode(val)
+            params['conditionsFile'].val = "{}".format(val)
             return  # forceEndTrial doesn't need to update  type or 'updates'
         elif name == 'duration':  # deprecated in v1.70.00
             params['stopType'].val = u'duration (s)'
-            params['stopVal'].val = unicode(val)
+            params['stopVal'].val = "{}".format(val)
             return  # times doesn't need to update its type or 'updates' rule
         elif name == 'allowedKeys' and valType == 'str':  # changed v1.70.00
             # ynq used to be allowed, now should be 'y','n','q' or
@@ -359,10 +451,10 @@ class Experiment(object):
             params[name].val = val
         elif name == 'times':  # deprecated in v1.60.00
             times = eval('%s' % val)
-            params['startType'].val = unicode('time (s)')
-            params['startVal'].val = unicode(times[0])
-            params['stopType'].val = unicode('time (s)')
-            params['stopVal'].val = unicode(times[1])
+            params['startType'].val = "{}".format('time (s)')
+            params['startVal'].val = "{}".format(times[0])
+            params['stopType'].val = "{}".format('time (s)')
+            params['stopVal'].val = "{}".format(times[1])
             return  # times doesn't need to update its type or 'updates' rule
         elif name in ('Begin Experiment', 'Begin Routine', 'Each Frame',
                       'End Routine', 'End Experiment'):
@@ -377,7 +469,7 @@ class Experiment(object):
                                 " and log files (blank defaults to the "
                                 "builder pref)"),
                 categ='Data')
-        elif 'val' in paramNode.keys():
+        elif 'val' in list(paramNode.keys()):
             if val == 'window units':  # changed this value in 1.70.00
                 params[name].val = 'from exp settings'
             # in v1.80.00, some RatingScale API and Param fields were changed
@@ -410,23 +502,22 @@ class Experiment(object):
                     params[name] = Param(
                         val, valType=paramNode.get('valType'),
                         allowedTypes=[],
-                        hint=_translate(
-                            "This parameter is not known by this version "
-                            "of PsychoPy. It might be worth upgrading"))
+                        hint=_translate("This parameter is not known by this version "
+                                        "of PsychoPy. It might be worth upgrading"))
                     params[name].allowedTypes = paramNode.get('allowedTypes')
                     if params[name].allowedTypes is None:
                         params[name].allowedTypes = []
                     params[name].readOnly = True
-                    msg = _translate(
-                        "Parameter %r is not known to this version of "
-                        "PsychoPy but has come from your experiment file "
-                        "(saved by a future version of PsychoPy?). This "
-                        "experiment may not run correctly in the current "
-                        "version.")
+                    msg = _translate("Parameter %r is not known to this version of "
+                                     "PsychoPy but has come from your experiment file "
+                                     "(saved by a future version of PsychoPy?). This "
+                                     "experiment may not run correctly in the current "
+                                     "version.")
                     logging.warn(msg % name)
                     logging.flush()
+
         # get the value type and update rate
-        if 'valType' in paramNode.keys():
+        if 'valType' in list(paramNode.keys()):
             params[name].valType = paramNode.get('valType')
             # compatibility checks:
             if name in ['allowedKeys'] and paramNode.get('valType') == 'str':
@@ -438,7 +529,7 @@ class Experiment(object):
             # conversions based on valType
             if params[name].valType == 'bool':
                 params[name].val = eval("%s" % params[name].val)
-        if 'updates' in paramNode.keys():
+        if 'updates' in list(paramNode.keys()):
             params[name].updates = paramNode.get('updates')
 
     def loadFromXML(self, filename):
@@ -473,7 +564,8 @@ class Experiment(object):
         # fetch exp settings
         settingsNode = root.find('Settings')
         for child in settingsNode:
-            self._getXMLparam(params=self.settings.params, paramNode=child)
+            self._getXMLparam(params=self.settings.params, paramNode=child,
+                              componentNode=settingsNode)
         # name should be saved as a settings parameter (only from 1.74.00)
         if self.settings.params['expName'].val in ['', None, 'None']:
             shortName = os.path.splitext(filenameBase)[0]
@@ -522,7 +614,8 @@ class Experiment(object):
                 # populate the component with its various params
                 for paramNode in componentNode:
                     self._getXMLparam(params=component.params,
-                                      paramNode=paramNode)
+                                      paramNode=paramNode,
+                                      componentNode=componentNode)
                 compGoodName = self.namespace.makeValid(
                     componentNode.get('name'))
                 if compGoodName != componentNode.get('name'):
@@ -532,7 +625,7 @@ class Experiment(object):
                 routine.append(component)
         # for each component that uses a Static for updates, we need to set
         # that
-        for thisRoutine in self.routines.values():
+        for thisRoutine in list(self.routines.values()):
             for thisComp in thisRoutine:
                 for thisParamName in thisComp.params:
                     thisParam = thisComp.params[thisParamName]
@@ -593,7 +686,13 @@ class Experiment(object):
                 self.flow.append(LoopTerminator(
                     loop=loops[elementNode.get('name')]))
             elif elementNode.tag == "Routine":
-                self.flow.append(self.routines[elementNode.get('name')])
+                if elementNode.get('name') in self.routines:
+                    self.flow.append(self.routines[elementNode.get('name')])
+                else:
+                    logging.error("A Routine called '{}' was on the Flow but "
+                                  "could not be found (failed rename?). You "
+                                  "may need to re-insert it".format(elementNode.get('name')))
+                    logging.flush()
 
         if modifiedNames:
             msg = 'duplicate variable name(s) changed in loadFromXML: %s\n'
@@ -601,6 +700,8 @@ class Experiment(object):
         if duplicateNames:
             msg = 'duplicate variable names: %s'
             logging.warning(msg % ', '.join(list(set(duplicateNames))))
+        # if we succeeded then save current filename to self
+        self.filename = filename
 
     def setExpName(self, name):
         self.settings.params['expName'].val = name
@@ -608,6 +709,88 @@ class Experiment(object):
     def getExpName(self):
         return self.settings.params['expName'].val
 
+    def getResourceFiles(self):
+        """Returns a list of known files needed for the experiment
+        Interrogates each loop looking for conditions files and each
+
+        """
+        join = os.path.join
+        abspath = os.path.abspath
+        srcRoot = os.path.split(self.filename)[0]
+
+        def getPaths(filePath):
+            """Helper to return absolute and relative paths (or None)
+
+            :param filePath: str to a potential file path (rel or abs)
+            :return: dict of 'asb' and 'rel' paths or None
+            """
+            thisFile = {}
+            if len(filePath) > 2 and (filePath[0] == "/" or filePath[1] == ":"):
+                thisFile['abs'] = filePath
+                thisFile['rel'] = os.path.relpath(filePath, srcRoot)
+            else:
+                thisFile['rel'] = filePath
+                thisFile['abs'] = os.path.normpath(join(srcRoot, filePath))
+            if os.path.isfile(thisFile['abs']):
+                return thisFile
+            else:
+                return None
+
+        def findPathsInFile(filePath):
+            """Recursively search a conditions file (xlsx or csv)
+             extracting valid file paths in any param/cond
+
+            :param filePath: str to a potential file path (rel or abs)
+            :return: list of dicts{'rel','abs'} of valid file paths
+            """
+            paths = []
+            # does it look at all like an excel file?
+            if (not isinstance(filePath, basestring)
+                    or filePath[-4:] not in ['.csv', 'xlsx']):
+                return paths
+            thisFile = getPaths(filePath)
+            # does it exist?
+            if not thisFile:
+                return paths
+            # this file itself is valid so add to resources if not already
+            if thisFile not in paths:
+                paths.append(thisFile)
+            conds = data.importConditions(thisFile['abs'])  # load the abs path
+            for thisCond in conds:  # thisCond is a dict
+                for param, val in list(thisCond.items()):
+                    if isinstance(val, basestring) and len(val):
+                        subFile = getPaths(val)
+                    else:
+                        subFile = None
+                    if subFile:
+                        paths.append(subFile)
+                        # if it's a possible conditions file then recursive
+                        if thisFile['abs'][-4:] in ["xlsx", ".csv"]:
+                            contained = findPathsInFile(subFile['abs'])
+                            paths.extend(contained)
+            return paths
+
+        resources = []
+        for thisEntry in self.flow:
+            if thisEntry.getType() == 'LoopInitiator':
+                # find all loops and check for conditions filename
+                params = thisEntry.loop.params
+                if 'conditionsFile' in params:
+                    condsPaths = findPathsInFile(params['conditionsFile'].val)
+                    resources.extend(condsPaths)
+            elif thisEntry.getType() == 'Routine':
+                # find all params of all compons and check if valid filename
+                for thisComp in thisEntry:
+                    for thisParam in thisComp.params:
+                        filePath = ''
+                        if isinstance(thisParam, basestring):
+                            thisFile = getPaths(thisParam)
+                        elif isinstance(thisParam.val, basestring):
+                            thisFile = getPaths(thisParam.val)
+                        # then check if it's a valid path
+                        if thisFile:
+                            resources.append(thisFile)
+        return resources
 
 class Param(object):
     """Defines parameters for Experiment Components
@@ -704,29 +887,36 @@ class Param(object):
         self.readOnly = False
 
     def __str__(self):
+
         if self.valType == 'num':
             try:
                 # will work if it can be represented as a float
-                return str(float(self.val))
+                return "{}".format(float(self.val))
             except Exception:  # might be an array
                 return "asarray(%s)" % (self.val)
         elif self.valType == 'int':
             try:
                 return "%i" % self.val  # int and float -> str(int)
             except TypeError:
-                return unicode(self.val)  # try array of float instead?
+                return "{}".format(self.val)  # try array of float instead?
         elif self.valType == 'str':
             # at least 1 non-escaped '$' anywhere --> code wanted
             # return str if code wanted
             # return repr if str wanted; this neatly handles "it's" and 'He
             # says "hello"'
-            if type(self.val) in [str, unicode]:
+            if isinstance(self.val, basestring):
                 codeWanted = _unescapedDollarSign_re.search(self.val)
                 if codeWanted:
                     return "%s" % getCodeFromParamStr(self.val)
                 else:  # str wanted
                     # remove \ from all \$
-                    return repr(re.sub(r"[\\]\$", '$', self.val))
+                    s = repr(re.sub(r"[\\]\$", '$', self.val))
+                    # if target is python2.x then unicode will be u'something'
+                    # but for other targets that will raise an annoying error
+                    if scriptTarget != 'PsychoPy':
+                        if s.startswith("u'") or s.startswith('u"'):
+                            s = s[1:]
+                    return s
             return repr(self.val)
         elif self.valType in ['code', 'extendedCode']:
             isStr = isinstance(self.val, basestring)
@@ -737,7 +927,7 @@ class Param(object):
                 # the user actually wanted just the $
                 return "%s" % self.val[1:]
             elif isStr:
-                return "%s" % self.val  # user actually wanted just the $
+                return "%s" % self.val
             else:  # if val was a tuple it needs converting to a string first
                 return "%s" % repr(self.val)
         elif self.valType == 'bool':
@@ -746,6 +936,17 @@ class Param(object):
             raise TypeError("Can't represent a Param of type %s" %
                             self.valType)
 
+    def __eq__(self, other):
+        """Test for equivalence is needed for Params because what really
+        typically want to test is whether the val is the same
+        """
+        return self.val == other
+
+    def __ne__(self, other):
+        """Test for (non)equivalence is needed for Params because what really
+        typically want to test is whether the val is the same/different
+        """
+        return self.val != other
 
 class TrialHandler(object):
     """A looping experimental control object
@@ -832,6 +1033,9 @@ class TrialHandler(object):
         # no longer needed - initialise the trial handler just before it runs
         pass
 
+    def writeInitCodeJS(self, buff):
+        pass
+
     def writeResourcesCodeJS(self, buff):
         buff.writeIndented("resourceManager.addResource({});\n"
                            .format(self.params["conditionsFile"]))
@@ -858,9 +1062,13 @@ class TrialHandler(object):
         # write the code
         code = ("\n# set up handler to look after randomisation of conditions etc\n"
                 "%(name)s = data.TrialHandler(nReps=%(nReps)s, method=%(loopType)s, \n"
-                "    extraInfo=expInfo, originPath=-1,\n"
-                "    trialList=" + condsStr + ",\n"  # conditions go here
-                "    seed=%(random seed)s, name='%(name)s')\n")
+                "    extraInfo=expInfo, originPath=-1,\n")
+        buff.writeIndentedLines(code % inits)
+        # the next line needs to be kept separate to preserve potential string formatting
+        # by the user in condStr (i.e. it shouldn't be a formatted string itself
+        code = "    trialList=" + condsStr + ",\n"  # conditions go here
+        buff.writeIndented(code)
+        code = "    seed=%(random seed)s, name='%(name)s')\n"
         buff.writeIndentedLines(code % inits)
 
         code = ("thisExp.addLoop(%(name)s)  # add the loop to the experiment\n" +
@@ -871,8 +1079,8 @@ class TrialHandler(object):
         if not self.exp.prefsBuilder['unclutteredNamespace']:
             code = ("# abbreviate parameter names if possible (e.g. rgb = %(name)s.rgb)\n"
                     "if %(name)s != None:\n"
-                    "    for paramName in %(name)s.keys():\n"
-                    "        exec(paramName + '= %(name)s.' + paramName)\n")
+                    "    for paramName in %(name)s:\n"
+                    "        exec('{} = %(name)s[paramName]'.format(paramName))\n")
             buff.writeIndentedLines(code % {'name': self.thisName})
 
         # then run the trials loop
@@ -885,9 +1093,74 @@ class TrialHandler(object):
         if not self.exp.prefsBuilder['unclutteredNamespace']:
             code = ("# abbreviate parameter names if possible (e.g. rgb = %(name)s.rgb)\n"
                     "if %(name)s != None:\n"
-                    "    for paramName in %(name)s.keys():\n"
-                    "        exec(paramName + '= %(name)s.' + paramName)\n")
+                    "    for paramName in %(name)s:\n"
+                    "        exec('{} = %(name)s[paramName]'.format(paramName))\n")
             buff.writeIndentedLines(code % {'name': self.thisName})
+
+    def writeLoopStartCodeJS(self, buff):
+        """Write the code to create and run a sequence of trials
+        """
+        # some useful variables
+        # create the variable "thisTrial" from "trials"
+        makeLoopIndex = self.exp.namespace.makeLoopIndex
+        self.thisName = makeLoopIndex(self.params['name'].val)
+        # seed might be undefined
+        seed = self.params['random seed'].val or 'undefined'
+
+        code = ("\nfunction {params[name]}LoopBegin(thisScheduler) {{\n"
+                "  // set up handler to look after randomisation of conditions etc\n"
+                "  try {{\n"
+                "    {params[name]} = new psychoJS.data.TrialHandler({{nReps:{params[nReps]}, method:{params[loopType]},\n"
+                "      extraInfo:expInfo, originPath:undefined,\n"
+                "      trialList:psychoJS.data.importConditions({params[conditionsFile]}),\n"
+                "      seed:{seed}, name:'{params[name]}'}});\n"
+                "    thisExp.addLoop({params[name]}); // add the loop to the experiment\n"
+                "    {thisName} = {params[name]}.trialList[{params[name]}.trialSequence[0]]; // so we can initialise stimuli with some values\n"
+                "    // abbreviate parameter names if possible (e.g. rgb={thisName}.rgb)\n"
+                "    abbrevNames({thisName});\n"
+                .format(params=self.params, thisName=self.thisName, seed=seed))
+        buff.writeIndentedLines(code)
+        # for the scheduler
+        code = ("    // Schedule each of the trials in the list to occur\n"
+                "    for (var i = 0; i < {params[name]}.trialSequence.length; ++i) {{\n"
+                "      {thisName} = {params[name]}.trialList[{params[name]}.trialSequence[i]];\n"
+                "      thisScheduler.add(abbrevNames({thisName}));\n"
+                .format(params=self.params, thisName=self.thisName, seed=seed))
+        buff.writeIndentedLines(code)
+        # then we need to include begin, eachFrame and end code for each entry within that loop
+        loopDict = self.exp.flow.loopDict
+        thisLoop = loopDict[self]  # dict containing lists of children
+        code = ""
+        for thisChild in thisLoop:
+            if thisChild.getType() == 'Routine':
+                thisType = 'Routine'
+                code += (
+                    "      thisScheduler.add({name}RoutineBegin);\n"
+                    "      thisScheduler.add({name}RoutineEachFrame);\n"
+                    "      thisScheduler.add({name}RoutineEnd);\n"
+                    .format(params=self.params, name=thisChild.params['name'])
+                    )
+            else:  # for a LoopInitiator
+                code += (
+                    "      {name}LoopScheduler = new psychoJS.Scheduler();\n"
+                    "      thisScheduler.add({name}LoopBegin, {name}LoopScheduler);\n"
+                    "      thisScheduler.add({name}LoopScheduler);\n"
+                    "      thisScheduler.add({name}LoopEnd);\n"
+                    .format(params=self.params, name=thisChild.params['name'])
+                    )
+        if self.params['isTrials'].val == True:
+            code += ("      thisScheduler.add(recordLoopIteration({name}));\n"
+                     .format(name=self.params['name']))
+        buff.writeIndentedLines(code)
+        code = ("    }}\n"
+                "  }} catch (exception) {{\n"
+                "    console.log(exception);\n"
+                "  }}\n"
+                "\n"
+                "  return psychoJS.NEXT;\n"
+                "}}\n"
+                .format())
+        buff.writeIndentedLines(code)
 
     def writeLoopEndCode(self, buff):
         # Just within the loop advance data line if loop is whole trials
@@ -927,6 +1200,23 @@ class TrialHandler(object):
                         "    dataOut=['n','all_mean','all_std', 'all_raw'])\n")
                 buff.writeIndentedLines(code % self.params)
 
+    def writeLoopEndCodeJS(self, buff):
+        # Just within the loop advance data line if loop is whole trials
+        code = ("\nfunction {params[name]}LoopEnd() {{\n"
+                "  // get names of stimulus parameters\n"
+                "  if (psychoJS.isEmpty({params[name]}.trialList)) {{ // XXX equiv of : in ([], [None], None)\n"
+                "    params = [];\n"
+                "  }}\n"
+                "  else {{\n"
+                "    params = Object.keys({params[name]}.trialList[0]);\n"
+                "  }}\n\n"
+                "  // save data for this loop\n"
+                "  thisExp.loopEnded({params[name]});\n"
+                "  return psychoJS.NEXT;\n"
+                "  }}\n"
+                .format(params=self.params))
+        buff.writeIndentedLines(code)
+
     def getType(self):
         return 'TrialHandler'
 
@@ -949,6 +1239,7 @@ class StairHandler(object):
         self.type = 'StairHandler'
         self.exp = exp
         self.order = ['name']  # make name come first (others don't matter)
+        self.children = []
         self.params = {}
         self.params['name'] = Param(
             name, valType='code',
@@ -1054,14 +1345,14 @@ class StairHandler(object):
 
     def writeLoopEndCode(self, buff):
         # Just within the loop advance data line if loop is whole trials
-        if self.params['isTrials'].val == True:
+        if self.params['isTrials'].val:
             buff.writeIndentedLines("thisExp.nextEntry()\n\n")
         # end of the loop. dedent
         buff.setIndentLevel(-1, relative=True)
         buff.writeIndented("# staircase completed\n")
         buff.writeIndented("\n")
         # save data
-        if self.params['isTrials'].val == True:
+        if self.params['isTrials'].val:
             if self.exp.settings.params['Save excel file'].val:
                 code = ("%(name)s.saveAsExcel(filename + '.xlsx',"
                         " sheetName='%(name)s')\n")
@@ -1174,20 +1465,20 @@ class MultiStairHandler(object):
         if not self.exp.prefsBuilder['unclutteredNamespace']:
             code = ("# abbreviate parameter names if possible (e.g. "
                     "rgb=condition.rgb)\n"
-                    "for paramName in condition.keys():\n"
+                    "for paramName in condition:\n"
                     "    exec(paramName + '= condition[paramName]')\n")
             buff.writeIndentedLines(code)
 
     def writeLoopEndCode(self, buff):
         # Just within the loop advance data line if loop is whole trials
-        if self.params['isTrials'].val == True:
+        if self.params['isTrials'].val:
             buff.writeIndentedLines("thisExp.nextEntry()\n\n")
         # end of the loop. dedent
         buff.setIndentLevel(-1, relative=True)
         buff.writeIndented("# all staircases completed\n")
         buff.writeIndented("\n")
         # save data
-        if self.params['isTrials'].val == True:
+        if self.params['isTrials'].val:
             if self.exp.settings.params['Save excel file'].val:
                 code = "%(name)s.saveAsExcel(filename + '.xlsx')\n"
                 buff.writeIndented(code % self.params)
@@ -1214,19 +1505,27 @@ class LoopInitiator(object):
         self.exp = loop.exp
         loop.initiator = self
 
+    def getType(self):
+        return 'LoopInitiator'
+
     def writeResourcesCodeJS(self, buff):
         self.loop.writeResourcesCodeJS(buff)
 
     def writeInitCode(self, buff):
         self.loop.writeInitCode(buff)
 
+    def writeInitCodeJS(self, buff):
+        self.loop.writeInitCodeJS(buff)
+
     def writeMainCode(self, buff):
         self.loop.writeLoopStartCode(buff)
         # we are now the inner-most loop
         self.exp.flow._loopList.append(self.loop)
 
-    def getType(self):
-        return 'LoopInitiator'
+    def writeMainCodeJS(self, buff):
+        self.loop.writeLoopStartCodeJS(buff)
+        # we are now the inner-most loop
+        self.exp.flow._loopList.append(self.loop)
 
     def writeExperimentEndCode(self, buff):  # not needed
         pass
@@ -1242,10 +1541,10 @@ class LoopTerminator(object):
         self.exp = loop.exp
         loop.terminator = self
 
-    def writeInitCode(self, buff):
-        pass
+    def getType(self):
+        return 'LoopTerminator'
 
-    def writeResourcesCodeJS(self, buff):
+    def writeInitCode(self, buff):
         pass
 
     def writeMainCode(self, buff):
@@ -1253,8 +1552,10 @@ class LoopTerminator(object):
         # _loopList[-1] will now be the inner-most loop
         self.exp.flow._loopList.remove(self.loop)
 
-    def getType(self):
-        return 'LoopTerminator'
+    def writeMainCodeJS(self, buff):
+        self.loop.writeLoopEndCodeJS(buff)
+        # _loopList[-1] will now be the inner-most loop
+        self.exp.flow._loopList.remove(self.loop)
 
     def writeExperimentEndCode(self, buff):  # not needed
         pass
@@ -1270,6 +1571,29 @@ class Flow(list):
         self.exp = exp
         self._currentRoutine = None
         self._loopList = []  # will be used while we write the code
+
+    @property
+    def loopDict(self):
+        """Creates a tree of the Flow:
+        {entry:object, children:list, parent:object}
+        :return:
+        """
+        loopDict = {}
+        currentList = []
+        loopStack = [currentList]
+        for thisEntry in self:
+            if thisEntry.getType() == 'LoopInitiator':
+                currentList.append(thisEntry.loop) # this loop is child of current
+                loopDict[thisEntry.loop] = []  # and is (current) empty list awaiting children
+                currentList = loopDict[thisEntry.loop]
+                loopStack.append(thisEntry.loop)  # update the list of loops (for depth)
+            elif thisEntry.getType() == 'LoopTerminator':
+                loopStack.pop()
+                currentList = loopStack[-1]
+            else:
+                # routines should be added to current
+                currentList.append(thisEntry)
+        return loopDict
 
     def __repr__(self):
         return "psychopy.experiment.Flow(%s)" % (str(list(self)))
@@ -1339,7 +1663,7 @@ class Flow(list):
         # exec(key+'=expInfo[key]')
         expInfo = eval(self.exp.settings.params['Experiment info'].val)
         keywords = self.exp.namespace.nonUserBuilder[:]
-        keywords.extend(['expInfo'] + expInfo.keys())
+        keywords.extend(['expInfo'] + list(expInfo.keys()))
         reserved = set(keywords).difference({'random', 'rand'})
         for key in component.params:
             field = component.params[key]
@@ -1437,19 +1761,19 @@ class Flow(list):
         """For JS we need to create a function to fetch all resources needed
         by each loop
         """
-        startResources = """\nfunction setupResources() {{"""
-        script.writeIndentedLines(startResources.format())
-        script.setIndentLevel(1, relative=True)
-        # ask each Routine/Loop to insert what it needs
-        for entry in self:
-            entry.writeResourcesCodeJS(script)
-        #
-        endResources = ("// then add that scheduler to the resource manager\n"
-                        "resourceManager.scheduleResources(resourceScheduler);\n"
-                        "return NEXT;")
-        script.writeIndentedLines(endResources)
-        script.setIndentLevel(-1, relative=True)
-        script.writeIndentedLines("}\n")
+        code = (
+            "\nfunction registerResources() {\n"
+            "    psychoJS.resourceManager.scheduleRegistration(resourceScheduler);\n"
+            "\n"
+            "    return psychoJS.NEXT;\n"
+            "}\n"
+            "\nfunction downloadResources() {\n"
+            "    psychoJS.resourceManager.scheduleDownload(resourceScheduler);\n"
+            "\n"
+            "    return psychoJS.NEXT;\n"
+            "}\n"
+        )
+        script.writeIndentedLines(code)
 
     def writeBody(self, script):
         """Write the rest of the code
@@ -1475,46 +1799,105 @@ class Flow(list):
             self._currentRoutine = entry
             entry.writeExperimentEndCode(script)
 
+
     def writeBodyJS(self, script):
         """Initialise each component and then write the per-frame code too
         """
-        # initialise the components for all Routines in a single function
-        script.writeIndentedLines("\nfunction experimentInit() {")
-        script.setIndentLevel(1, relative=True)
-        code = ("// Initialize resource loading component\n"
-                "resourceManagerClock = new core.Clock();\n"
-                "resourceManager = new io.ResourceManager("
-                " {win:win, target:'OSF', projectName:'stroop', "
-                " projectContributor:'Alain Pitiot', projectStatus:'PUBLIC',"
-                " clock:resourceManagerClock});\n")
-        script.writeIndentedLines(code)
 
-        # routine init sections
+        tree = []
+
+        # Then on the flow we need only the Loop Init/terminate
         for entry in self:
-            # NB each entry is a routine or LoopInitiator/Terminator
-            self._currentRoutine = entry
-            if hasattr(entry, 'writeInitCodeJS'):
-                entry.writeInitCodeJS(script)
+            if entry.getType() in ['LoopInitiator', 'LoopTerminator']:
+                entry.writeMainCodeJS(script)  # will either be function trialsBegin() or trialsEnd()
 
-        # create globalClock etc
-        code = ("\n// Create some handy timers\n"
-                "globalClock = new core.Clock();"
-                "  // to track the time since experiment started\n"
-                "routineTimer = new core.CountdownTimer();"
-                "  // to track time remaining of each (non-slip) routine\n"
-                "\nreturn NEXT;"
-                )
+
+        # write the run function
+        script.writeIndentedLines("\nfunction run() {\n")
+        script.setIndentLevel(+1, relative=True)
+
+        # handle email for error messages
+        if 'email' in self.exp.settings.params and self.exp.settings.params['email'].val:
+            code = ("// If there is an error, we should inform the participant and email the experimenter\n"
+                    "// note: we use window.onerror rather than a try/catch as the latter\n"
+                    "// do not handle so well exceptions thrown asynchronously\n"
+                    "/*window.onerror = function(message, source, lineno, colno, error) {\n"
+                    "  console.error(error);\n"
+                    "  psychoJS.gui.dialog({'error' : error});\n"
+                    "  //psychoJS.core.sendErrorToExperimenter(exception);\n"
+                    "  // show error stack on console:\n"
+                    "  var json = JSON.parse(error);\n"
+                    "  console.error(json.stack);\n"
+                    "  return true;\n"
+                    "}*/\n")
+            script.writeIndentedLines(code)
+
+        code = ("// init psychoJS and set up OpenGL Canvas\n"
+                "setupWin();\n"
+                "psychoJS.init(win);\n"
+                "\n"
+                "// main scheduler\n"
+                "scheduler = new psychoJS.Scheduler();\n"
+                "\n"
+                "// Store info about the experiment session\n"
+                "expName = 'stroop';  // from the Builder filename that created this script\n"
+                "expInfo = {'participant':'', 'session':'01'};\n"
+                "\n"
+                "// set up experiment\n"
+                "scheduler.add(setupExperiment);\n"
+                "scheduler.add(psychoJS.setupCallbacks);\n"
+                "\n"
+                "// register all available resources and download them\n"
+                "resourceScheduler = new psychoJS.Scheduler();\n"
+                "resourceScheduler.add(registerResources);\n"
+                "resourceScheduler.add(downloadResources);\n"
+                "// asynchronous approach: the resource scheduler is run in parallel to the main one\n"
+                "scheduler.add(function() { resourceScheduler.start(win); });\n")
+        script.writeIndentedLines(code)
+        code = ("\n// dialog box\n"
+                "scheduler.add(psychoJS.gui.DlgFromDict({dictionary:expInfo, title:expName}));\n"
+                "\n"
+                "flowScheduler = new psychoJS.Scheduler();\n"
+                "dialogCancelScheduler = new psychoJS.Scheduler();\n"
+                "scheduler.addConditionalBranches(function() "
+                "{ return psychoJS.gui.dialogComponent.button === 'OK'; }, flowScheduler, dialogCancelScheduler);\n"
+                "\n"
+                "// flowScheduler gets run if the participants presses OK\n"
+                "flowScheduler.add(updateInfo); // add timeStamp\n"
+                "flowScheduler.add(experimentInit);")
+        script.writeIndentedLines(code)
+        # add the code for each routine
+        loopStack = []
+        for thisEntry in self:
+            if not loopStack:  # if not currently in a loop
+                if thisEntry.getType() == 'LoopInitiator':
+                    code = ("{name}LoopScheduler = new psychoJS.Scheduler();\n"
+                            "flowScheduler.add({name}LoopBegin, {name}LoopScheduler);\n"
+                            "flowScheduler.add({name}LoopScheduler);\n"
+                            "flowScheduler.add({name}LoopEnd);\n"
+                            .format(name=thisEntry.loop.params['name']))
+                    loopStack.append(thisEntry.loop)
+                elif thisEntry.getType() == "Routine":
+                    code = ("flowScheduler.add({params[name]}RoutineBegin);\n"
+                            "flowScheduler.add({params[name]}RoutineEachFrame);\n"
+                            "flowScheduler.add({params[name]}RoutineEnd);\n"
+                            .format(params=thisEntry.params))
+            else:  # we are already in a loop so don't code here just count
+                code = ""
+                if thisEntry.getType() == 'LoopInitiator':
+                    loopStack.append(thisEntry.loop)
+                elif thisEntry.getType() == 'LoopTerminator':
+                    loopStack.remove(thisEntry.loop)
+            script.writeIndentedLines(code)
+        # quit when all routines are finished
+        script.writeIndented("flowScheduler.add(quitPsychoJS);\n")
+        # handled all the flow entries
+        code = ("\n// quit if user presses Cancel in dialog box:\n"
+                "dialogCancelScheduler.add(quitPsychoJS);\n"
+                "\nscheduler.start(win);\n")
         script.writeIndentedLines(code)
         script.setIndentLevel(-1, relative=True)
-        script.writeIndentedLines("}")
-
-        # then for each Routine write the Begin, EachFrame and End functions
-        for thisRoutine in self:
-            if hasattr(thisRoutine, 'writeMainCodeJS'):
-                thisRoutine.writeMainCodeJS(script)
-        for thisRoutine in self:
-            if hasattr(thisRoutine, 'writeEndCodeJS'):
-                thisRoutine.writeEndCodeJS(script)
+        script.writeIndented("}\n")
 
 
 class Routine(list):
@@ -1541,6 +1924,13 @@ class Routine(list):
         _rep = "psychopy.experiment.Routine(name='%s', exp=%s, components=%s)"
         return _rep % (self.name, self.exp, str(list(self)))
 
+    @property
+    def name(self):
+        return self.params['name']
+    @name.setter
+    def name(self, name):
+        self.params['name'] = name
+
     def addComponent(self, component):
         """Add a component to the end of the routine"""
         self.append(component)
@@ -1550,7 +1940,7 @@ class Routine(list):
         name = component.params['name']
         self.remove(component)
         # check if the component was using any Static Components for updates
-        for thisParamName, thisParam in component.params.items():
+        for thisParamName, thisParam in list(component.params.items()):
             if (hasattr(thisParam, 'updates') and
                     thisParam.updates and
                     'during:' in thisParam.updates):
@@ -1599,7 +1989,7 @@ class Routine(list):
         code = '\n// Initialize components for Routine "%s"\n'
         buff.writeIndentedLines(code % self.name)
         self._clockName = self.name + "Clock"
-        buff.writeIndented('%s = new core.Clock();\n' % self._clockName)
+        buff.writeIndented('%s = new psychoJS.core.Clock();\n' % self._clockName)
         for thisCompon in self:
             if hasattr(thisCompon, 'writeInitCodeJS'):
                 thisCompon.writeInitCodeJS(buff)
@@ -1712,24 +2102,21 @@ class Routine(list):
             buff.writeIndentedLines(code % self.name)
 
 
-    def writeMainCodeJS(self, buff):
-        """This defines the code for the frames of a single routine
-        """
+    def writeRoutineBeginCodeJS(self, buff):
 
         # create the frame loop for this routine
-        code = ("\n"
-                "function {0}Begin() {{\n")
+        code = ("\nfunction {0}RoutineBegin() {{\n")
         buff.writeIndentedLines(code.format(self.name))
         buff.setIndentLevel(1, relative=True)
-        code = ("//------Prepare to start Routine '{0}'-------\n"
+        code = ("//------Prepare to start Routine '{name}'-------\n"
                 "t = 0;\n"
-                "{0}Clock.reset(); // clock\n"
-                "frameN = -1;\n"
-                )
+                "{name}Clock.reset(); // clock\n"
+                "frameN = -1;\n")
+        buff.writeIndentedLines(code.format(name=self.name))
         # can we use non-slip timing?
         maxTime, useNonSlip = self.getMaxTime()
         if useNonSlip:
-            buff.writeIndented('routineTimer.add(%f)\n' % (maxTime))
+            buff.writeIndented('routineTimer.add(%f);\n' % (maxTime))
 
         code = "// update component parameters for each repeat\n"
         buff.writeIndentedLines(code)
@@ -1739,7 +2126,7 @@ class Routine(list):
                 thisCompon.writeRoutineStartCodeJS(buff)
 
         code = ("// keep track of which components have finished\n"
-                "{0}Components = [];\n").format(self.name)
+                "{name}Components = [];\n").format(name=self.name)
         buff.writeIndentedLines(code)
         for thisCompon in self:
             if ('startType' in thisCompon.params
@@ -1747,12 +2134,25 @@ class Routine(list):
                 code = "{}Components.push({});\n".format(
                     self.name, thisCompon.params['name'])
                 buff.writeIndentedLines(code)
+        code = ("for(var i = 0; i < {name}Components.length; ++i) {{\n"
+                "  thisComponent = {name}Components[i];\n"
+                "  if ('status' in thisComponent) {{\n"
+                "    thisComponent.status = psychoJS.NOT_STARTED;\n"
+                "  }}\n"
+                "}}\n"
+                "\nreturn psychoJS.NEXT;\n"
+                .format(name=self.name))
+        buff.writeIndentedLines(code)
         buff.setIndentLevel(-1, relative=True)
         buff.writeIndentedLines("}\n")
 
+
+    def writeEachFrameCodeJS(self, buff):
+        # can we use non-slip timing?
+        maxTime, useNonSlip = self.getMaxTime()
+
         # write code for each frame
-        code = ("\n"
-                "function {0}EachFrame() {{\n")
+        code = ("\nfunction {0}RoutineEachFrame() {{\n")
         buff.writeIndentedLines(code.format(self.name))
         buff.setIndentLevel(1, relative=True)
         code = ("//------Loop for each frame of Routine '{0}'-------\n"
@@ -1760,14 +2160,13 @@ class Routine(list):
                 "\n// get current time\n"
                 "t = {0}Clock.getTime();\n"
                 "frameN = frameN + 1;"
-                "// number of completed frames (so 0 is the first frame)\n"
-                )
+                "// number of completed frames (so 0 is the first frame)\n")
         buff.writeIndentedLines(code.format(self.name))
         # write the code for each component during frame
         buff.writeIndentedLines('// update/draw components on each frame\n')
         # just 'normal' components
         for comp in self:
-            if ("PsychoJS" in comp.targets and comp.type != 'Static'):
+            if "PsychoJS" in comp.targets and comp.type != 'Static':
                 comp.writeFrameCodeJS(buff)
         # update static component code last
         for comp in self.getStatics():
@@ -1778,20 +2177,20 @@ class Routine(list):
         code = ("\n// check if the Routine should terminate\n"
                 "if (!continueRoutine) {{"
                 "  // a component has requested a forced-end of Routine\n"
-                "  return NEXT;\n"
+                "  return psychoJS.NEXT;\n"
                 "}}\n"
                 "continueRoutine = false;"
                 "// reverts to True if at least one component still running\n"
                 "for(var i = 0; i < {0}Components.length; ++i) {{\n"
                 "  thisComponent = {0}Components[i];\n"
-                "  if ('status' in thisComponent && thisComponent.status != FINISHED) {{\n"
+                "  if ('status' in thisComponent && thisComponent.status != psychoJS.FINISHED) {{\n"
                 "    continueRoutine = true;\n"
                 "    break;\n"
                 "  }}\n"
                 "}}\n"
                 "// check for quit (the Esc key)\n"
-                "if (endExpNow || event.getKeys({{keyList:['escape']}}).length > 0) {{\n"
-                "  core.quit();\n"
+                "if (endExpNow || psychoJS.event.getKeys({{keyList:['escape']}}).length > 0) {{\n"
+                "  psychoJS.core.quit('The <Escape> key was pressed. Goodbye!');\n"
                 "}}\n")
         buff.writeIndentedLines(code.format(self.name))
 
@@ -1801,62 +2200,63 @@ class Routine(list):
                                     "&& routineTimer.getTime() > 0) {")
         else:
             buff.writeIndentedLines("if (continueRoutine) {")
-        code = ("  return FLIP_REPEAT;\n"
+        code = ("  return psychoJS.FLIP_REPEAT;\n"
                 "}\n"
                 "else {\n"
-                "  return NEXT;\n"
+                "  return psychoJS.NEXT;\n"
                 "}\n")
         buff.writeIndentedLines(code)
 
         buff.setIndentLevel(-1, relative=True)
         buff.writeIndentedLines("}\n")
 
-        code = ("\n"
-                "function {0}End() {{\n")
+    def writeRoutineEndCodeJS(self, buff):
+        # can we use non-slip timing?
+        maxTime, useNonSlip = self.getMaxTime()
+
+        code = ("\nfunction {0}RoutineEnd() {{\n")
         buff.writeIndentedLines(code.format(self.name))
         buff.setIndentLevel(1, relative=True)
 
-        code = ("//------Ending Routine '{0}'-------\n"
-                "for (var i = 0; i < instructComponents.length; ++i) {{\n"
+        code = ("//------Ending Routine '{name}'-------\n"
+                "for (var i = 0; i < {name}Components.length; ++i) {{\n"
+                '  thisComponent = {name}Components[i];\n'
                 '  if ("setAutoDraw" in thisComponent) {{\n'
                 "    thisComponent.setAutoDraw(false);\n"
-                '  }}\n'
+                "  }}\n"
                 "}}\n")
-        buff.writeIndentedLines(code.format(self.params['name']))
+        buff.writeIndentedLines(code.format(name=self.params['name']))
         # add the EndRoutine code for each component
         for compon in self:
             if "PsychoJS" in compon.targets:
                 compon.writeRoutineEndCodeJS(buff)
-#
-#        # reset routineTimer at the *very end* of all non-nonSlip routines
-#        if not useNonSlip:
-#            code = ('# the Routine "%s" was not non-slip safe, so reset '
-#                    'the non-slip timer\n'
-#                    'routineTimer.reset()\n')
-#            buff.writeIndentedLines(code % self.name)
 
+        # reset routineTimer at the *very end* of all non-nonSlip routines
+        if not useNonSlip:
+            code = ('// the Routine "%s" was not non-slip safe, so reset '
+                    'the non-slip timer\n'
+                    'routineTimer.reset();\n')
+            buff.writeIndentedLines(code % self.name)
+
+        buff.writeIndented('return psychoJS.NEXT;\n')
         buff.setIndentLevel(-1, relative=True)
         buff.writeIndentedLines("}\n")
 
-        # CURRENTLY HERE WORKING THROUGH ROUTINE MAIN CODE
-#
-#        # write the code for each component for the end of the routine
-#        code = ('\n# -------Ending Routine "%s"-------\n'
-#                'for thisComponent in %sComponents:\n'
-#                '    if hasattr(thisComponent, "setAutoDraw"):\n'
-#                '        thisComponent.setAutoDraw(False)\n')
-#        buff.writeIndentedLines(code % (self.name, self.name))
-
-#
-
-
 
     def writeExperimentEndCode(self, buff):
-        """This defines the code for the frames of a single routine
+        """Some components have
         """
         # This is the beginning of the routine, before the loop starts
         for component in self:
             component.writeExperimentEndCode(buff)
+
+    def writeExperimentEndCodeJS(self, buff):
+        """This defines the code for the frames of a single routine
+        """
+        # This is the beginning of the routine, before the loop starts
+        for component in self:
+            if 'writeExperimentEndCodeJS' in dir(component):
+                component.writeExperimentEndCodeJS(buff)
 
     def getType(self):
         return 'Routine'
@@ -2041,8 +2441,7 @@ class NameSpace(object):
         vars = self.user + self.builder + self.psychopy
         if numpy_count_only:
             return "%s + [%d numpy]" % (str(vars), len(self.numpy))
-        else:
-            return str(vars + self.numpy)
+        return str(vars + self.numpy)
 
     def getDerived(self, basename):
         """ buggy
@@ -2219,11 +2618,10 @@ class NameSpace(object):
         prefix = 'this'
         irregular = {'stimuli': 'stimulus',
                      'mice': 'mouse', 'people': 'person'}
-        for plural, singular in irregular.items():
+        for plural, singular in list(irregular.items()):
             nn = re.compile(plural, re.IGNORECASE)
             newName = nn.sub(singular, newName)
-        if (newName.endswith('s') and
-                not newName.lower() in irregular.values()):
+        if newName.endswith('s') and newName.lower() not in list(irregular.values()):
             newName = newName[:-1]  # trim last 's'
         else:  # might end in s_2, so delete that s; leave S
             match = re.match(r"^(.*)s(_\d+)$", newName)

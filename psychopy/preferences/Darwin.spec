@@ -39,13 +39,18 @@
     # Add paths here to your custom Python modules
     paths=list(default=list())
     # choice of audio library
-    audioLib = list(default=list('pyo', 'pygame'))
+    audioLib = list(default=list('sounddevice', 'pyo', 'pygame'))
     # audio driver to use
     audioDriver = list(default=list('coreaudio', 'portaudio'))
+    # audio device to use (if audioLib allows control)
+    audioDevice = list(default=list('auto'))
     # path to flac (lossless audio compression) on this operating system
     flac = string(default='')
     # a list of parallel ports
     parallelPorts = list(default=list('0x0378', '0x03BC', '/dev/parport0', '/dev/parport1'))
+    # Shutdown keys, following the pyglet naming scheme.
+    shutdownKey = string(default='')
+    shutdownKeyModifiers = list(default=list())
 
 # Application settings, applied to coder, builder, & prefs windows
 [app]
@@ -141,6 +146,8 @@
     quit = string(default='Ctrl+Q')
     #open the preferences dialog
     preferences = string(default='Ctrl+,')
+    # export Builder experiment to HTML
+    exportHTML = string(default='Ctrl+E')
 
     # Coder: cut
     cut = string(default='Ctrl+X')
@@ -193,6 +200,8 @@
     copyRoutine = string(default='Ctrl+Shift+C')
     # Builder: paste the copied routine
     pasteRoutine = string(default='Ctrl+Shift+V')
+    # Builder: paste the copied component
+    pasteCompon = string(default='Ctrl+Alt+V')
     # Coder: show / hide the output panel
     toggleOutputPanel = string(default='Ctrl+Shift+O')
     #Builder: rename an existing routine

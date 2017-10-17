@@ -1,4 +1,6 @@
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
+
 """
 ioHub
 .. file: ioHub/devices/serial/__init__.py
@@ -9,6 +11,9 @@ Distributed under the terms of the GNU General Public License (GPL version 3 or 
 .. moduleauthor:: Sol Simpson <sol@isolver-software.com> + contributors, please see credits section of documentation.
 .. fileauthor:: Sol Simpson <sol@isolver-software.com>
 """
+from builtins import chr
+from builtins import str
+from builtins import range
 from psychopy.iohub import OrderedDict, print2err, printExceptionDetailsToStdErr, Computer, EXP_SCRIPT_DIRECTORY
 import serial
 from .. import Device, DeviceEvent
@@ -463,7 +468,7 @@ class Serial(Device):
                 read_time = logged_time
             self._last_poll_time = read_time
             return True
-        except Exception, e:
+        except Exception as e:
             print2err("--------------------------------")
             print2err("ERROR in Serial._poll: ",e)
             printExceptionDetailsToStdErr()
@@ -493,9 +498,12 @@ class Pstbox(Serial):
     def __init__(self, *args, **kwargs):
         Serial.__init__(self, *args, **kwargs)
 
-        self._nbuttons = 5
+        self._nbuttons = 7
         # Buttons 0--4, from left to right:
         # [1, 2, 4, 8, 16]
+        # Buttons 5--6 are connected devices which generate button presses 
+        # (e.g. a refresh detector which responds when a certain luminance is 
+        # exceeded)
         self._button_bytes = 2**N.arange(self._nbuttons, dtype='uint8')
 
         self._nlamps = 5

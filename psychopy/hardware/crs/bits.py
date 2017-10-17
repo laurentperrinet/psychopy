@@ -1,5 +1,5 @@
-#!/usr/bin/env python2
-# coding=utf-8
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 # Part of the PsychoPy library
 # Copyright (C) 2015 Jonathan Peirce
@@ -12,7 +12,13 @@
 #    (Kleiner) but does not actually use that code directly
 
 from __future__ import absolute_import
+from __future__ import print_function
+from __future__ import division
 
+from future import standard_library
+standard_library.install_aliases()
+from builtins import range
+from builtins import object
 import os
 import sys
 import time
@@ -211,9 +217,9 @@ class BitsPlusPlus(object):
         # choose endpoints
         LUTrange = np.asarray(LUTrange)
         if LUTrange.size == 1:
-            startII = int(round((0.5 - LUTrange / 2.0) * 255.0))
+            startII = int(round((0.5 - LUTrange/2.0) * 255.0))
             # +1 because python ranges exclude last value:
-            endII = int(round((0.5 + LUTrange / 2.0) * 255.0)) + 1
+            endII = int(round((0.5 + LUTrange/2.0) * 255.0)) + 1
         elif LUTrange.size == 2:
             multiplier = 1.0
             if LUTrange[1] <= 1:
@@ -221,13 +227,13 @@ class BitsPlusPlus(object):
             startII = int(round(LUTrange[0] * multiplier))
             # +1 because python ranges exclude last value:
             endII = int(round(LUTrange[1] * multiplier)) + 1
-        stepLength = 2.0 / (endII - startII - 1)
+        stepLength = 2.0/(endII - startII - 1)
 
         if newLUT is None:
             # create a LUT from scratch (based on contrast and gamma)
             # rampStep = 2.0/(self.nEntries-1)
             ramp = np.arange(-1.0, 1.0 + stepLength, stepLength)
-            ramp = (ramp * self.contrast + 1.0) / 2.0
+            ramp = (ramp * self.contrast + 1.0)/2.0
             # self.LUT will be stored as 0.0:1.0 (gamma-corrected)
             self.LUT[startII:endII, 0] = copy(ramp)
             self.LUT[startII:endII, 1] = copy(ramp)
@@ -258,10 +264,19 @@ class BitsPlusPlus(object):
         # do gamma correction if necessary
         if self.gammaCorrect == 'software':
             gamma = self.gamma
-            if hasattr(self.win.monitor, 'lineariseLums'):
-                lin = self.win.monitor.lineariseLums
+
+            try:
+                lin = self.win.monitor.linearizeLums
                 self.LUT[startII:endII, :] = lin(self.LUT[startII:endII, :],
                                                  overrideGamma=gamma)
+            except AttributeError:
+                try:
+                    lin = self.win.monitor.lineariseLums
+                    self.LUT[startII:endII, :] = lin(self.LUT[startII:endII, :],
+                                                     overrideGamma=gamma)
+                except AttributeError:
+                    pass
+
         # update the bits++ box with new LUT
         # get bits into correct order, shape and add to header
         # go from ubyte to uint16
@@ -568,7 +583,7 @@ class BitsSharp(BitsPlusPlus, serialdevice.SerialDevice):
         # get product ('Bits_Sharp'?)
         self.sendMessage('$ProductType\r')
         time.sleep(0.1)
-        info['ProductType'] = self.read().replace(pt, '')
+        info['ProductType'] = self.read().replace('#ProductType;', '')
         info['ProductType'] = info['ProductType'].replace(';\n\r', '')
         # get serial number
         self.sendMessage('$SerialNumber\r')
@@ -963,17 +978,17 @@ class Config(object):
         if LUT is not None:
             win.gammaRamp = LUT
         # create the patch of stimulus to test
-        expectedVals = range(256)
+        expectedVals = list(range(256))
         w, h = win.size
         # NB psychopy uses -1:1
         testArrLums = np.resize(np.linspace(-1, 1, 256), [256, 256])
         stim = visual.ImageStim(win, image=testArrLums, size=[256, h],
-                                pos=[128 - w / 2, 0], units='pix')
+                                pos=[128 - w//2, 0], units='pix')
         expected = np.repeat(expectedVals, 3).reshape([-1, 3])
         stim.draw()
         # make sure the frame buffer was correct (before gamma was applied)
         frm = np.array(win.getMovieFrame(buffer='back'))
-        assert np.alltrue(frm[0, 0:256, 0] == range(256))
+        assert np.alltrue(frm[0, 0:256, 0] == list(range(256)))
         win.flip()
         # use bits sharp to test
         if demoMode:
@@ -988,7 +1003,7 @@ class Config(object):
                 self.logFile.write('\n')
         return errs
 
-    def findIdentityLUT(self, maxIterations=1000, errCorrFactor=1.0 / 5000,
+    def findIdentityLUT(self, maxIterations=1000, errCorrFactor=1.0/5000,
                         nVerifications=50,
                         demoMode=True,
                         logFile=''):
@@ -1016,7 +1031,7 @@ class Config(object):
         # create standard options
         intel = np.linspace(.05, .95, 256)
         one = np.linspace(0, 1.0, 256)
-        fraction = np.linspace(0.0, 65535.0 / 65536.0, num=256)
+        fraction = np.linspace(0.0, 65535.0/65536.0, num=256)
         LUTs = {'intel': np.repeat(intel, 3).reshape([-1, 3]),
                 '0-255': np.repeat(one, 3).reshape([-1, 3]),
                 '0-65535': np.repeat(fraction, 3).reshape([-1, 3]),
@@ -1029,7 +1044,7 @@ class Config(object):
             pyplot.Figure()
             pyplot.subplot(1, 2, 1)
             pyplot.plot([0, 255], [0, 255], '-k')
-            errPlot = pyplot.plot(range(256), range(256), '.r')[0]
+            errPlot = pyplot.plot(list(range(256)), list(range(256)), '.r')[0]
             pyplot.subplot(1, 2, 2)
             pyplot.plot(200, 0.01, '.w')
             pyplot.show(block=False)
@@ -1037,11 +1052,11 @@ class Config(object):
         lowestErr = 1000000000
         bestLUTname = None
         logging.flush()
-        for LUTname, currentLUT in LUTs.items():
+        for LUTname, currentLUT in list(LUTs.items()):
             sys.stdout.write('Checking %r LUT:' % LUTname)
             errs = self.testLUT(currentLUT, demoMode)
             if plotResults:
-                errPlot.set_ydata(range(256) + errs[:, 0])
+                errPlot.set_ydata(list(range(256)) + errs[:, 0])
                 pyplot.draw()
             print('mean err = %.3f per LUT entry' % abs(errs).mean())
             if abs(errs).mean() < abs(lowestErr):
@@ -1069,7 +1084,7 @@ class Config(object):
             meanErr = abs(errs).mean()
             errProgression.append(meanErr)
             if plotResults:
-                errPlot.set_ydata(range(256) + errs[:, 0])
+                errPlot.set_ydata(list(range(256)) + errs[:, 0])
                 pyplot.subplot(1, 2, 2)
                 if meanErr == 0:
                     point = '.k'
@@ -1108,7 +1123,7 @@ class Config(object):
             pyplot.title('Progression of errors')
             pyplot.ylabel("Mean error per LUT entry (0-1)")
             pyplot.xlabel("Test iteration")
-            r256 = np.reshape(range(256), [256, 1])
+            r256 = np.reshape(list(range(256)), [256, 1])
             pyplot.subplot(1, 3, 2)
             pyplot.plot(r256, r256, 'k-')
             pyplot.plot(r256, currentLUT[:, 0] * 255, 'r.', markersize=2.0)
@@ -1119,7 +1134,7 @@ class Config(object):
             pyplot.xlabel("LUT entry")
 
             pyplot.subplot(1, 3, 3)
-            deviations = currentLUT - r256 / 255.0
+            deviations = currentLUT - r256/255.0
             pyplot.plot(r256, deviations[:, 0], 'r.')
             pyplot.plot(r256, deviations[:, 1], 'g.')
             pyplot.plot(r256, deviations[:, 2], 'b.')
